@@ -76,7 +76,7 @@ def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
     """
     dim = pcloud.shape[1]
     cpoints = pcloud[nlg.norm(pcloud-pt, axis=1) <= wsize,:]
-    if cpoints.shape[0] < dim: return None
+    if cpoints.shape[0] < dim: return np.zeros(dim  )
     
     cpoints = cpoints - cpoints.sum(axis=0)/cpoints.shape[0]
     _,_,v = np.linalg.svd(cpoints, full_matrices=True)
@@ -94,6 +94,6 @@ def find_all_normals_naive (pcloud, wsize=0.02, flip_away=False):
     """
     normals = np.zeros([0,pcloud.shape[1]])
     for pt in pcloud:
-        normals = np.r_[normals,np.atleast_2d(find_normal_naive(pcloud,pt,wsize,flip_away))]
-    
+        nm = find_normal_naive(pcloud,pt,wsize,flip_away)
+        normals = np.r_[normals,np.atleast_2d(nm)]
     return normals
