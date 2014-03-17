@@ -88,10 +88,20 @@ def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
     
     return nm
 
-def find_all_normals_naive (pcloud, wsize=0.02, flip_away=False):
+def find_all_normals_naive (pcloud, wsize=0.02, flip_away=False, project_lower_dim=False):
     """
     Find normals at all the points.
     """
+    if project_lower_dim:
+        dim = pcloud.shape[1]
+        pmean = pcloud.sum(axis=0)/pcloud.shape[0]
+        p_centered = pcloud - pmean
+        _,_,VT = np.linalg.svd(p_centered, full_matrices=True)
+        p_lower_dim = VT[0:dim-1,:].dot(p_centered.T).T
+        p_ld_nms = find_all_normals_naive(p_lower_dim,wsize=wsize,flip_away=flip_away,project_lower_dim=False)
+        return VT[0:dim-1,:].T.dot(p_ld_nms.T).T
+
+    
     normals = np.zeros([0,pcloud.shape[1]])
     for pt in pcloud:
         nm = find_normal_naive(pcloud,pt,wsize,flip_away)
