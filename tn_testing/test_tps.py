@@ -4,7 +4,7 @@ from mayavi import mlab
 import tn_eval.tps_utils as tu
 from tn_utils import clouds
 from tn_utils.colorize import colorize
-from tn_eval.baseline import tps_rpm_bij_normals
+from tn_eval.baseline import tps_rpm_bij_normals_naive, tps_rpm_bij_normals
 from tn_rapprentice.registration import tps_rpm_bij
 from tn_visualization import mayavi_utils
 from tn_visualization.mayavi_plotter import PlotterInit, gen_custom_request, gen_mlab_request
@@ -145,7 +145,7 @@ def test_base_line (pts1, pts2):
     f1,_ = tps_rpm_bij(pts1, pts2, reg_init=10, reg_final=1, rot_reg=np.r_[1e-3,1e-3,1e-1], n_iter=50, plot_cb=plot_cb, plotting=0)
     #raw_input("Done with tps_rpm_bij")
     #plotter.request(gen_mlab_request(mlab.clf))
-    f2,_ = tps_rpm_bij_normals(pts1, pts2, reg_init=10, reg_final=01, n_iter=50, rot_reg=np.r_[1e-3,1e-3,1e-1], 
+    f2,_ = tps_rpm_bij_normals_naive(pts1, pts2, reg_init=10, reg_final=01, n_iter=50, rot_reg=np.r_[1e-3,1e-3,1e-1], 
                                 nwsize=0.04, neps=0.02, plot_cb=plot_cb, plotting =0)
     #raw_input('abcd')
 
@@ -161,6 +161,37 @@ def test_base_line (pts1, pts2):
     mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
     mlab.show()
     
+def test_base_line2 (pts1, pts2):
+    pts1 = clouds.downsample(pts1, 0.02)
+    pts2 = clouds.downsample(pts2, 0.02)
+    print pts1.shape
+    print pts2.shape
+
+    #plotter = PlotterInit()
+
+    def plot_cb(src, targ, xtarg_nd, corr, wt_n, f):
+        plot_requests = plot_warping(f.transform_points, src, targ, fine=False)
+        for req in plot_requests:
+            plotter.request(req)
+
+    f1,_ = tps_rpm_bij(pts1, pts2, reg_init=10, reg_final=1, rot_reg=np.r_[1e-3,1e-3,1e-1], n_iter=50, plot_cb=plot_cb, plotting=0)
+    #raw_input("Done with tps_rpm_bij")
+    #plotter.request(gen_mlab_request(mlab.clf))
+    f2,_ = tps_rpm_bij_normals(pts1, pts2, reg_init=10, reg_final=01, n_iter=50, rot_reg=np.r_[1e-3,1e-3,1e-1], normal_coeff = 0.01,  
+                                    nwsize = 0.07, plot_cb=plot_cb, plotting =0)
+    #raw_input('abcd')
+
+    from tn_rapprentice import tps
+    #print tps.tps_cost(f1.lin_ag, f1.trans_g, f1.w_ng, pts1, pts2, 1)
+    #print tps.tps_cost(f2.lin_ag, f2.trans_g, f2.w_ng, pts1, pts2, 1)
+    #plotter.request(gen_mlab_request(mlab.clf))
+    mlab.figure(1)
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    #mlab.show()
+    mlab.figure(2)
+    #mlab.clf()
+    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
+    mlab.show()
     
 
 if __name__=='__main__':
@@ -168,4 +199,4 @@ if __name__=='__main__':
     hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
     pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'])
     pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'])
-    test_base_line(pts1, pts2)
+    test_base_line2(pts1, pts2)
