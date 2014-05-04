@@ -7,6 +7,9 @@ import numpy as np
 import scipy.spatial.distance as ssd
 import scipy.optimize as opt
 
+import cvxopt as co, cvxpy as cp
+
+
 from hd_utils.colorize import colorize
 
 VERBOSE = False
@@ -248,6 +251,52 @@ def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n):
     Theta = solve_eqp1(H,f,A)
     
     return Theta[1:d+1], Theta[0], Theta[d+1:]
+
+
+def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
+    if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
+    n,d = x_na.shape
+    K_nn = tps_kernel_matrix(x_na)
+    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
+    
+    A = cp.Variable(n,d)
+    B = cp.Variable(d,d)
+    c = cp.Variable(d,1)
+    
+    Y = co.matrix(y_ng)
+    K = co.matrix(K_nn)
+    K2 = co.matrix(np.sqrt(-K_nn))
+    X = co.matrix(x_na)
+    W = co.matrix(np.diag(wt_n))
+    R = co.matrix(rot_coefs)
+    ones = co.matrix(np.ones((n,1)))
+    
+    constraints = []
+    
+    # For correspondences
+    V1 = cp.Variable(n,d)
+    constraints.append(V1 == Y-K*A-X*B - ones*c.T)
+    V2 = cp.Variable(n,d)
+    constraints.append(V2 == cp.sqrt(W)*V1)
+    # For bending cost
+    V3 = cp.Variable(n,d)
+    constraints.append(V3 == K2*A)
+    # For rotation cost
+    V4 = cp.Variable(d,d)
+    constraints.append(V4 == cp.sqrt(R)*B)
+    
+    # Orthogonality constraints for bending
+    constraints.extend([X.T*A == 0, ones.T*A == 0])
+    
+    # TPS objective
+    objective = cp.Minimize(sum(cp.square(V2)) + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
+     
+    
+    p = cp.Problem(objective, constraints)
+    p.solve()
+    
+    return np.array(B.value), np.squeeze(np.array(c.value)) , np.array(A.value)
+
     
     
 def tps_fit2(x_na, y_ng, bend_coef, rot_coef, wt_n=None):

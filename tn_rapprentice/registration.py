@@ -17,9 +17,9 @@ from __future__ import division
 import numpy as np
 import scipy.spatial.distance as ssd
 
-from hd_utils import math_utils
+from tn_utils import math_utils
 
-from hd_rapprentice import tps, svds 
+from tn_rapprentice import tps, svds 
 
 
 
@@ -124,7 +124,7 @@ class Composition(Transformation):
             totalgrad = (grad[:,:,:,None] * totalgrad[:,None,:,:]).sum(axis=-2)
         return totalgrad
 
-def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None):
+def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None, use_cvx = False):
     """
     x_na: source cloud
     y_nd: target cloud
@@ -133,7 +133,10 @@ def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None):
     wt_n: weight the points        
     """
     f = ThinPlateSpline()
-    f.lin_ag, f.trans_g, f.w_ng = tps.tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n)
+    if use_cvx:
+        f.lin_ag, f.trans_g, f.w_ng = tps.tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n)
+    else:
+        f.lin_ag, f.trans_g, f.w_ng = tps.tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n)
     f.x_na = x_na
     return f
 

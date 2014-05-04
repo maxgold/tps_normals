@@ -2,6 +2,8 @@ from __future__ import division
 import numpy as np, numpy.linalg as nlg
 import scipy.spatial.distance as ssd
 
+import cvxopt as co, cvxpy as cp
+
 #from tn_utils import math_utils
 from tn_rapprentice import tps
 from tn_rapprentice.registration import ThinPlateSpline, fit_ThinPlateSpline, balance_matrix3
@@ -94,7 +96,21 @@ def tps_rpm_bij_normals_naive(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final 
     return f,g
 
 
-def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, normal_coeff=1, 
+def calculate_normal_dist (x_na, y_ng, nwsize=0.04):
+    e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
+    e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
+    return ssd.cdist(e_x,e_y,'euclidean')
+
+def calculate_normal_dist2 (x_na, y_ng, nwsize=0.04):
+    e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
+    e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
+#     import IPython
+#     IPython.embed()
+    return -e_x.dot(e_y.T)
+
+
+
+def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, normal_coef=0.0001, 
                         nwsize=0.04, plotting = False, plot_cb = None):
     """
     tps-rpm algorithm mostly as described by chui and rangaran
@@ -121,10 +137,15 @@ def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001
         ywarped_md = g.transform_points(y_md)
         
         fwddist_nm = ssd.cdist(xwarped_nd, y_md,'euclidean')
+        fwddist_normals_nm = calculate_normal_dist2(xwarped_nd, y_md,nwsize)
         invdist_nm = ssd.cdist(x_nd, ywarped_md,'euclidean')
+        invdist_normals_nm = calculate_normal_dist2(x_nd, ywarped_md, nwsize)
+        
+        import IPython
+        IPython.embed()
         
         r = rads[i]
-        prob_nm = np.exp( -(fwddist_nm + invdist_nm) / (2*r) )
+        prob_nm = np.exp( -(fwddist_nm + invdist_nm + normal_coef*(fwddist_normals_nm + invdist_normals_nm) / (2*r)))
         corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, 1e-1, 2e-1)
         corr_nm += 1e-9
         
@@ -138,15 +159,17 @@ def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001
         if plotting and i%plotting==0 and plot_cb is not None:
             plot_cb(x_nd, y_md, xtarg_nd, corr_nm, wt_n, f)
         
-        f = fit_ThinPlateSpline_normals(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg, normal_coeff=normal_coeff, nwsize = nwsize)
-        g = fit_ThinPlateSpline_normals(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg, normal_coeff=normal_coeff, nwsize = nwsize)
+#         f = fit_ThinPlateSpline_normals(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
+#         g = fit_ThinPlateSpline_normals(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
+        f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
+        g = fit_ThinPlateSpline(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
 
     f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
     g._cost = tps.tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
     return f,g
 
 
-def fit_ThinPlateSpline_normals(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, normal_coeff=1, wt_n=None,nwsize=0.02):
+def fit_ThinPlateSpline_normals(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, normal_coef=1, wt_n=None,nwsize=0.02, use_cvx=False, use_dot=True):
     """
     x_na: source cloud
     y_nd: target cloud
@@ -155,12 +178,15 @@ def fit_ThinPlateSpline_normals(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, norma
     wt_n: weight the points        
     """
     f = ThinPlateSpline()
-    f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coeff, wt_n)
+    if use_cvx:
+        f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, use_dot=use_dot)
+    else:
+        f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n)
     f.x_na = x_na
     return f
 
 
-def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coeff, wt_n, nwsize=0.02):
+def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nwsize=0.02):
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
 
@@ -174,6 +200,8 @@ def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coeff, wt_n, nwsize
     if d == 3:
         x_diff = np.transpose(x_na[None,:,:] - x_na[:,None,:],(0,2,1))
         P = e_x.dot(x_diff)[range(n),range(n),:]/(K_nn+1e-20)
+#         import IPython
+#         IPython.embed()
     else:
         raise NotImplementedError
      
@@ -190,12 +218,10 @@ def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coeff, wt_n, nwsize
     Qnr = np.c_[np.ones((n,1)), e_x, P]
     WQnr = wt_n[:,None] * Qnr
     QWQnr = Qnr.T.dot(WQnr)
-    H += normal_coeff*QWQnr
-#     import IPython
-#     IPython.embed() 
+    H += normal_coef*QWQnr 
     ##
     
-    f = -WQ.T.dot(y_ng) - normal_coeff*WQnr.T.dot(e_y)
+    f = -WQ.T.dot(y_ng) - normal_coef*WQnr.T.dot(e_y)
     f[1:d+1,0:d] -= np.diag(rot_coefs)
     
     A = np.r_[np.zeros((d+1,d+1)), np.c_[np.ones((n,1)), x_na]].T
@@ -203,3 +229,82 @@ def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coeff, wt_n, nwsize
     Theta = tps.solve_eqp1(H,f,A)
     
     return Theta[1:d+1], Theta[0], Theta[d+1:]
+
+
+def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nwsize=0.02, use_dot=False):
+    if wt_n is None: wt_n = np.ones(len(x_na))
+    n,d = x_na.shape
+    K_nn = tps.tps_kernel_matrix(x_na)
+    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)    
+    # Generate the normals
+    e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
+    e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
+    if d == 3:
+        x_diff = np.transpose(x_na[None,:,:] - x_na[:,None,:],(0,2,1))
+        Pmat = e_x.dot(x_diff)[range(n),range(n),:]/(K_nn+1e-20)
+    else:
+        raise NotImplementedError
+
+    A = cp.Variable(n,d)
+    B = cp.Variable(d,d)
+    c = cp.Variable(d,1)
+    
+    X = co.matrix(x_na)
+    Y = co.matrix(y_ng)
+    EX = co.matrix(e_x)
+    EY = co.matrix(e_y)
+    
+    K = co.matrix(K_nn)
+    K2 = co.matrix(np.sqrt(-K_nn))
+    P = co.matrix(Pmat)
+    
+    W = co.matrix(np.diag(wt_n))
+    R = co.matrix(rot_coefs)
+    ones = co.matrix(np.ones((n,1)))
+    
+    constraints = []
+    
+    # For correspondences
+    V1 = cp.Variable(n,d)
+    constraints.append(V1 == Y-K*A-X*B - ones*c.T)
+    V2 = cp.Variable(n,d)
+    constraints.append(V2 == cp.sqrt(W)*V1)
+    # For normals
+    if use_dot: 
+#         import IPython
+#         IPython.embed()
+        N1 = cp.Variable(n,n)
+        constraints.append(N1 == (P*A-EX*B)*EY.T)
+        
+#         N2 = cp.Variable(n)
+#         constraints.extend([N2[i] == N1[i,i] for i in xrange(n)])
+    else:
+        N1 = cp.Variable(n,d)
+        constraints.append(N1 == EY-P*A-EX*B)
+        N2 = cp.Variable(n,d)
+        constraints.append(N2 == cp.sqrt(W)*N1)
+    # For bending cost
+    V3 = cp.Variable(n,d)
+    constraints.append(V3 == K2*A)
+    # For rotation cost
+    V4 = cp.Variable(d,d)
+    constraints.append(V4 == cp.sqrt(R)*B)
+    
+    # Orthogonality constraints for bending
+    constraints.extend([X.T*A == 0, ones.T*A == 0])
+    
+    # TPS objective
+    if use_dot:
+        objective = cp.Minimize(sum(cp.square(V2)) - normal_coef*sum([N1[i,i] for i in xrange(n)]) 
+                                + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
+    else:
+        objective = cp.Minimize(sum(cp.square(V2)) + normal_coef*sum(cp.square(N2)) + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
+     
+    
+    p = cp.Problem(objective, constraints)
+    p.solve()
+    
+#     import IPython
+#     IPython.embed()
+    
+    return np.array(B.value), np.squeeze(np.array(c.value)) , np.array(A.value)

@@ -4,8 +4,8 @@ from mayavi import mlab
 import tn_eval.tps_utils as tu
 from tn_utils import clouds
 from tn_utils.colorize import colorize
-from tn_eval.baseline import tps_rpm_bij_normals_naive, tps_rpm_bij_normals
-from tn_rapprentice.registration import tps_rpm_bij
+from tn_eval.baseline import tps_rpm_bij_normals_naive, tps_rpm_bij_normals, fit_ThinPlateSpline_normals
+from tn_rapprentice.registration import tps_rpm_bij, fit_ThinPlateSpline
 from tn_visualization import mayavi_utils
 from tn_visualization.mayavi_plotter import PlotterInit, gen_custom_request, gen_mlab_request
 
@@ -194,9 +194,49 @@ def test_base_line2 (pts1, pts2):
     mlab.show()
     
 
+def test_cvx (pts1):
+    pts1 = clouds.downsample(pts1, 0.02).astype('float64')
+    
+    pts2 = np.random.normal(0,0.004,pts1.shape) + pts1
+
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=.1, rot_coef = 1e-5, wt_n=None, use_cvx = False)
+    f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=.1, rot_coef = 1e-5, wt_n=None, use_cvx = True)
+    
+    
+    mlab.figure(1)
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    #mlab.show()
+    mlab.figure(2)
+    #mlab.clf()
+    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
+    mlab.show()
+    
+
+def test_normals_cvx (pts1):
+    pts1 = clouds.downsample(pts1, 0.02).astype('float64')
+    nms = tu.find_all_normals_naive(pts1, wsize=0.15,flip_away=True, project_lower_dim=True)
+    noise = np.random.normal(0,0.008,pts1.shape[0])
+    pts2 =  pts1 + noise[:,None]*nms
+    
+#     import IPython
+#     IPython.embed()
+
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=.1, rot_coef = 1e-5, wt_n=None, use_cvx = True)
+    f2 = fit_ThinPlateSpline_normals(pts1, pts2, bend_coef=.1, rot_coef = 1e-5, normal_coef = 0.03**2, wt_n=None, use_cvx = True, use_dot=True)
+    
+    
+    mlab.figure(1)
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    #mlab.show()
+    mlab.figure(2)
+    #mlab.clf()
+    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
+    mlab.show()
+
+
 if __name__=='__main__':
     import h5py
     hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
-    pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'])
-    pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'])
-    test_base_line2(pts1, pts2)
+    pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
+    pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
+    test_normals_cvx(pts1)
