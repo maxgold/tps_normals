@@ -68,6 +68,46 @@ def deriv2_U(x,y,dr1,dr2,dim=3):
     else:
         raise NotImplementedError
 
+def tps_jacobian_single_term (pt, jpt, dim=3):
+    """
+    Finds Jacobian of single term
+    """
+    assert len(pt) == dim and len(jpt) == dim
+    
+    r = (pt - jpt)
+    nr = nlg.norm(r)
+    
+    if nr == 0: return 0
+    if dim == 3:
+        return -r/nr
+    elif dim == 2:
+        return -r*(2*np.log(nr) + 1)
+    else: raise NotImplementedError
+        
+    
+def tps_jacobian (f, pt, dim=3):
+    """
+    Finds the Jacobian Matrix at the point pt.
+    """
+    assert len(pt) == dim
+    jac = np.zeros((dim,dim))
+    
+    for jpt, w in zip(f.x_na, f.w_ng):
+        jac += np.atleast_2d(w).T.dot(np.atleast_2d(tps_jacobian_single_term(pt, jpt, dim)))
+    jac += f.lin_ag.T
+    return jac
+    
+    
+def project_lower_dim (pcloud): 
+    """
+    Projects points into lower dimension (dim - 1)
+    """
+    dim = pcloud.shape[1]
+    pmean = pcloud.sum(axis=0)/pcloud.shape[0]
+    p_centered = pcloud - pmean
+    _,_,VT = np.linalg.svd(p_centered, full_matrices=True)
+    return VT[0:dim-1,:].dot(p_centered.T).T
+
 
 def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
     """

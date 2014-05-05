@@ -78,7 +78,7 @@ class ThinPlateSpline(Transformation):
     """
     members:
         x_na: centers of basis functions
-        w_ng: 
+        w_ng: weights of kernel functions
         lin_ag: transpose of linear part, so you take x_na.dot(lin_ag)
         trans_g: translation part
     
@@ -95,6 +95,32 @@ class ThinPlateSpline(Transformation):
         return y_ng
     def compute_jacobian(self, x_ma):
         grad_mga = tps.tps_grad(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na)
+        return grad_mga
+    
+class ThinPlateSplineNormals(Transformation):
+    """
+    members:
+        x_na: centers of basis functions
+        w_ng: weights of kernel functions 
+        wn_ng: weights of kernel functions for slope elements at normals 
+        lin_ag: transpose of linear part, so you take x_na.dot(lin_ag)
+        trans_g: translation part
+    
+    """
+    def __init__(self, d=3):
+        "initialize as identity"
+        self.x_na = np.zeros((0,d))
+        self.n_na = np.zeros((0,d))
+        self.lin_ag = np.eye(d)
+        self.trans_g = np.zeros(d)
+        self.w_ng = np.zeros((0,d))
+        self.wn_ng = np.zeros((0,d))
+
+    def transform_points(self, x_ma):
+        y_ng = tps.tps_eval_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na)
+        return y_ng
+    def compute_jacobian(self, x_ma):
+        grad_mga = tps.tps_grad_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na, self.n_nms)
         return grad_mga
         
 class Affine(Transformation):

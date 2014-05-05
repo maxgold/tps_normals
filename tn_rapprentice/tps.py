@@ -10,7 +10,8 @@ import scipy.optimize as opt
 import cvxopt as co, cvxpy as cp
 
 
-from hd_utils.colorize import colorize
+from tn_utils.colorize import colorize
+from tn_eval import tps_utils as tu
 
 VERBOSE = False
 ENABLE_SLOW_TESTS = False
@@ -58,7 +59,17 @@ def tps_kernel_matrix2(x_na, y_ma):
     distmat = ssd.cdist(x_na, y_ma)
     return tps_apply_kernel(distmat, dim)
 
+def tps_deriv_mat(x_ma):
+    """
+    Doing it naively for now.
+    """
+    
+
 def tps_eval(x_ma, lin_ag, trans_g, w_ng, x_na):
+    K_mn = tps_kernel_matrix2(x_ma, x_na)
+    return np.dot(K_mn, w_ng) + np.dot(x_ma, lin_ag) + trans_g[None,:]
+
+def tps_eval_normals(x_ma, lin_ag, trans_g, w_ng, x_na, n_na):
     K_mn = tps_kernel_matrix2(x_ma, x_na)
     return np.dot(K_mn, w_ng) + np.dot(x_ma, lin_ag) + trans_g[None,:]
 
@@ -76,6 +87,10 @@ def tps_grad(x_ma, lin_ag, _trans_g, w_ng, x_na):
         diffa_mn = x_ma[:,a][:,None] - x_na[:,a][None,:]
         grad_mga[:,:,a] = lin_ga[None,:,a] - np.dot(nan2zero(diffa_mn/dist_mn),w_ng)
     return grad_mga
+
+def tps_grad_normals(x_ma, lin_ag, _trans_g, w_ng, x_na, n_na):
+    raise NotImplementedError
+    
     
 def tps_nr_grad(x_ma, lin_ag, _trans_g, w_ng, x_na, return_tuple = False):
     """
@@ -254,6 +269,9 @@ def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n):
 
 
 def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
+    """
+    Use cvx instead of just matrix multiply.
+    """
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
     n,d = x_na.shape
     K_nn = tps_kernel_matrix(x_na)

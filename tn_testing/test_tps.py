@@ -234,9 +234,32 @@ def test_normals_cvx (pts1):
     mlab.show()
 
 
+def test_normals_new (pts1):
+    pts1 = clouds.downsample(pts1, 0.02).astype('float64')
+    if pts1.shape[1] == 3:
+        pts1 = tu.project_lower_dim(pts1)
+    print pts1.shape
+    nms1 = tu.find_all_normals_naive(pts1, wsize=0.15,flip_away=True, project_lower_dim=False)
+    noise = np.random.normal(0,0.008,pts1.shape[0])
+    pts2 =  pts1 + noise[:,None]*nms1
+    nms2 = tu.find_all_normals_naive(pts2, wsize=0.15,flip_away=True, project_lower_dim=False)
+
+    print pts1.shape, pts2.shape
+    print np.c_[pts1,np.zeros((pts1.shape[0],1))].shape
+    print np.c_[pts2,np.zeros((pts2.shape[0],1))].shape
+
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    
+    import IPython
+    IPython.embed()
+    mlab.figure(1)
+    
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    mlab.show()
+
 if __name__=='__main__':
     import h5py
     hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
     pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
     pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
-    test_normals_cvx(pts1)
+    test_normals_new(pts1)

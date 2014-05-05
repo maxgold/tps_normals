@@ -70,41 +70,62 @@ def gen_grid(f, mins, maxes, ncoarse=10, nfine=30):
     generate 3d grid and warps it using the function f.
     The grid is based on the number of lines (ncoarse & nfine).
     """
-    xmin, ymin, zmin = mins
-    xmax, ymax, zmax = maxes
+    dim = len(mins)
+    if dim ==3:
+        xmin, ymin, zmin = mins
+        xmax, ymax, zmax = maxes
+    elif dim==2:
+        xmin, ymin = mins
+        xmax, ymax = maxes
+    else: raise NotImplemented()
 
     xcoarse = np.linspace(xmin, xmax, ncoarse)
     ycoarse = np.linspace(ymin, ymax, ncoarse)
-    zcoarse = np.linspace(zmin, zmax, ncoarse)
+    if dim == 3:
+        zcoarse = np.linspace(zmin, zmax, ncoarse)
 
     xfine = np.linspace(xmin, xmax, nfine)
     yfine = np.linspace(ymin, ymax, nfine)
-    zfine = np.linspace(zmin, zmax, nfine)
+    if dim == 3:
+        zfine = np.linspace(zmin, zmax, nfine)
     
     lines = []
-    if len(zcoarse) > 1:
-        for x in xcoarse:
-            for y in ycoarse:
+    if dim == 3:
+        if len(zcoarse) > 1:
+            for x in xcoarse:
+                for y in ycoarse:
+                    xyz = np.zeros((nfine, dim))
+                    xyz[:,0] = x
+                    xyz[:,1] = y
+                    xyz[:,2] = zfine
+                    lines.append(f(xyz))
+    
+        for y in ycoarse:
+            for z in zcoarse:
+                xyz = np.zeros((nfine, dim))
+                xyz[:,0] = xfine
+                xyz[:,1] = y
+                xyz[:,2] = z
+                lines.append(f(xyz))
+            
+        for z in zcoarse:
+            for x in xcoarse:
                 xyz = np.zeros((nfine, 3))
                 xyz[:,0] = x
-                xyz[:,1] = y
-                xyz[:,2] = zfine
+                xyz[:,1] = yfine
+                xyz[:,2] = z
                 lines.append(f(xyz))
-
-    for y in ycoarse:
-        for z in zcoarse:
-            xyz = np.zeros((nfine, 3))
+    else: 
+        for y in ycoarse:
+            xyz = np.zeros((nfine, dim))
             xyz[:,0] = xfine
             xyz[:,1] = y
-            xyz[:,2] = z
             lines.append(f(xyz))
-        
-    for z in zcoarse:
+            
         for x in xcoarse:
-            xyz = np.zeros((nfine, 3))
+            xyz = np.zeros((nfine, dim))
             xyz[:,0] = x
             xyz[:,1] = yfine
-            xyz[:,2] = z
             lines.append(f(xyz))
 
     return lines
@@ -115,41 +136,62 @@ def gen_grid2(f, mins, maxes, xres = .01, yres = .01, zres = .01):
     generate 3d grid and warps it using the function f.
     The grid is based on the resolution specified.
     """
-    xmin, ymin, zmin = mins
-    xmax, ymax, zmax = maxes
+    dim = len(mins)
+    if dim ==3:
+        xmin, ymin, zmin = mins
+        xmax, ymax, zmax = maxes
+    elif dim==2:
+        xmin, ymin = mins
+        xmax, ymax = maxes
+    else: raise NotImplemented()
 
     xcoarse = np.arange(xmin, xmax+xres/10., xres)
     ycoarse = np.arange(ymin, ymax+yres/10., yres)
-    zcoarse = np.arange(zmin, zmax+zres/10., zres)
-    
+    if dim == 3:
+        zcoarse = np.arange(zmin, zmax+zres/10., zres)
+
     xfine = np.arange(xmin, xmax+xres/10., xres/5.)
     yfine = np.arange(ymin, ymax+yres/10., yres/5.)
-    zfine = np.arange(zmin, zmax+zres/10., zres/5.)
+    if dim == 3:
+        zfine = np.arange(zmin, zmax+zres/10., zres/5.)
 
     lines = []
-    if len(zcoarse) > 1:
-        for x in xcoarse:
-            for y in ycoarse:
-                xyz = np.zeros((len(zfine), 3))
-                xyz[:,0] = x
+    if dim == 3:
+        if len(zcoarse) > 1:
+            for x in xcoarse:
+                for y in ycoarse:
+                    xyz = np.zeros((len(zfine), 3))
+                    xyz[:,0] = x
+                    xyz[:,1] = y
+                    xyz[:,2] = zfine
+                    lines.append(f(xyz))
+    
+        for y in ycoarse:
+            for z in zcoarse:
+                xyz = np.zeros((len(xfine), 3))
+                xyz[:,0] = xfine
                 xyz[:,1] = y
-                xyz[:,2] = zfine
+                xyz[:,2] = z
                 lines.append(f(xyz))
-
-    for y in ycoarse:
+            
         for z in zcoarse:
-            xyz = np.zeros((len(xfine), 3))
+            for x in xcoarse:
+                xyz = np.zeros((len(yfine), 3))
+                xyz[:,0] = x
+                xyz[:,1] = yfine
+                xyz[:,2] = z
+                lines.append(f(xyz))
+    else:
+        for y in ycoarse:
+            xyz = np.zeros((len(xfine), dim))
             xyz[:,0] = xfine
             xyz[:,1] = y
-            xyz[:,2] = z
             lines.append(f(xyz))
-        
-    for z in zcoarse:
+            
         for x in xcoarse:
-            xyz = np.zeros((len(yfine), 3))
+            xyz = np.zeros((len(yfine), dim))
             xyz[:,0] = x
             xyz[:,1] = yfine
-            xyz[:,2] = z
             lines.append(f(xyz))
 
     return lines
@@ -180,9 +222,13 @@ def plot_lines(lines, color=(1,1,1), line_width=1, opacity=0.4):
     connects  = np.delete(connects, Ns, axis=0)
     
     pts = np.vstack(lines)
+    dim = pts.shape[1]
+    if dim == 2:
+        pts = np.c_[pts,np.zeros((pts.shape[0],1))]
     s   = np.ones(pts.shape[0])
 
     # Create the points
+    
     src = mlab.pipeline.scalar_scatter(pts[:,0], pts[:,1], pts[:,2], s)
     src.mlab_source.dataset.lines = connects
     lines = mlab.pipeline.stripper(src)
@@ -239,8 +285,11 @@ def plot_warping(f, src, target, fine=True, draw_plinks=True):
     
     plot_lines(grid_lines, color=(0,0.5,0.3))
     
-    print src.shape
     warped = f.transform_points(src)
+    if src.shape[1] == 2:
+        src = np.c_[src,np.zeros((src.shape[0],1))]
+        target = np.c_[target,np.zeros((target.shape[0],1))]
+        warped = np.c_[warped,np.zeros((warped.shape[0],1))]
     
     mlab.points3d (src[:,0], src[:,1], src[:,2], color=(1,0,0), scale_factor=0.01)
     mlab.points3d (target[:,0], target[:,1], target[:,2], color=(0,0,1), scale_factor=0.01)
