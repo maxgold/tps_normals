@@ -65,12 +65,12 @@ class Transformation(object):
     def compute_numerical_jacobian(self, x_d, epsilon=0.0001):
         "numerical jacobian"
         x0 = np.asfarray(x_d)
-        f0 = self.transform_points(x0)
-        jac = np.zeros(len(x0), len(f0))
+        f0 = np.squeeze(self.transform_points(np.atleast_2d(x0)))
+        jac = np.zeros((len(x0), len(f0)))
         dx = np.zeros(len(x0))
         for i in range(len(x0)):
             dx[i] = epsilon
-            jac[i] = (self.transform_points(x0+dx) - f0) / epsilon
+            jac[i,:] = (self.transform_points(np.atleast_2d(x0+dx)) - f0) / epsilon
             dx[i] = 0.
         return jac.transpose()
 
@@ -101,6 +101,7 @@ class ThinPlateSplineNormals(Transformation):
     """
     members:
         x_na: centers of basis functions
+        n_na: normals at basis function centers
         w_ng: weights of kernel functions 
         wn_ng: weights of kernel functions for slope elements at normals 
         lin_ag: transpose of linear part, so you take x_na.dot(lin_ag)
@@ -117,10 +118,11 @@ class ThinPlateSplineNormals(Transformation):
         self.wn_ng = np.zeros((0,d))
 
     def transform_points(self, x_ma):
-        y_ng = tps.tps_eval_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na)
+        y_ng = tps.tps_eval_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.wn_ng, self.x_na, self.n_na)
         return y_ng
+
     def compute_jacobian(self, x_ma):
-        grad_mga = tps.tps_grad_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na, self.n_nms)
+        grad_mga = tps.tps_grad_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na, self.n_na)
         return grad_mga
         
 class Affine(Transformation):

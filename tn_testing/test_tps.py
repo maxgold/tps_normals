@@ -5,9 +5,12 @@ import tn_eval.tps_utils as tu
 from tn_utils import clouds
 from tn_utils.colorize import colorize
 from tn_eval.baseline import tps_rpm_bij_normals_naive, tps_rpm_bij_normals, fit_ThinPlateSpline_normals
+from tn_eval import tps_evaluate as te
 from tn_rapprentice.registration import tps_rpm_bij, fit_ThinPlateSpline
 from tn_visualization import mayavi_utils
 from tn_visualization.mayavi_plotter import PlotterInit, gen_custom_request, gen_mlab_request
+
+np.set_printoptions(precision=4, suppress=True)
 
 def test_normals ():
     """
@@ -234,27 +237,37 @@ def test_normals_cvx (pts1):
     mlab.show()
 
 
-def test_normals_new (pts1):
+def test_normals_new (pts1, pts2=None, reduce_dim=True):
     pts1 = clouds.downsample(pts1, 0.02).astype('float64')
-    if pts1.shape[1] == 3:
+    if pts1.shape[1] == 3 and reduce_dim:
         pts1 = tu.project_lower_dim(pts1)
     print pts1.shape
-    nms1 = tu.find_all_normals_naive(pts1, wsize=0.15,flip_away=True, project_lower_dim=False)
-    noise = np.random.normal(0,0.008,pts1.shape[0])
-    pts2 =  pts1 + noise[:,None]*nms1
-    nms2 = tu.find_all_normals_naive(pts2, wsize=0.15,flip_away=True, project_lower_dim=False)
+    nms1 = tu.find_all_normals_naive(pts1, wsize=0.15,flip_away=True, project_lower_dim=True)
+    if pts2 is None:
+        noise = np.random.normal(0,0.008,pts1.shape[0])
+        print max(noise)
+        #pts2 =  np.dot(pts1,np.array([[0,1], [-1,0]])) + noise[:,None]*nms1*0.1
+        pts2 =  pts1 + noise[:,None]*nms1
+        nms2 = tu.find_all_normals_naive(pts2, wsize=0.15,flip_away=True, project_lower_dim=False)
+    else:
+        pts2 = clouds.downsample(pts2, 0.02).astype('float64')
+        if pts2.shape[1] == 3 and reduce_dim:
+            pts2 = tu.project_lower_dim(pts2)
+        pts2 = pts2[:pts1.shape[0], :]
 
     print pts1.shape, pts2.shape
     print np.c_[pts1,np.zeros((pts1.shape[0],1))].shape
     print np.c_[pts2,np.zeros((pts2.shape[0],1))].shape
 
     f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.02)
     
-    import IPython
-    IPython.embed()
     mlab.figure(1)
-    
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    #mlab.show()
+    mlab.figure(2)
+    #mlab.clf()
+    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
     mlab.show()
 
 if __name__=='__main__':
@@ -262,4 +275,5 @@ if __name__=='__main__':
     hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
     pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
     pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
-    test_normals_new(pts1)
+    print pts2.shape
+    test_normals_new(pts1, reduce_dim=False)

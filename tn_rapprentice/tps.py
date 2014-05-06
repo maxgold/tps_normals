@@ -59,19 +59,30 @@ def tps_kernel_matrix2(x_na, y_ma):
     distmat = ssd.cdist(x_na, y_ma)
     return tps_apply_kernel(distmat, dim)
 
-def tps_deriv_mat(x_ma):
+def tps_normals_deriv_mat(x_ma,x_na, n_na):
     """
     Doing it naively for now.
+    Remove loops later -- should not be that hard.
     """
-    
+    n,d = x_na.shape
+    m,_ = x_ma.shape
+    D_mn = np.zeros((m,n))
+    # Get rid of these for loops at some point
+    for j in range(n):
+        p, nm = x_na[j,:], n_na[j,:]
+        for i in range(m):
+            D_mn[i,j] = -tu.deriv_U(p,x_ma[i,:],nm,d)
+
+    return D_mn
 
 def tps_eval(x_ma, lin_ag, trans_g, w_ng, x_na):
     K_mn = tps_kernel_matrix2(x_ma, x_na)
     return np.dot(K_mn, w_ng) + np.dot(x_ma, lin_ag) + trans_g[None,:]
 
-def tps_eval_normals(x_ma, lin_ag, trans_g, w_ng, x_na, n_na):
+def tps_eval_normals(x_ma, lin_ag, trans_g, w_ng, wn_ng,x_na, n_na):
     K_mn = tps_kernel_matrix2(x_ma, x_na)
-    return np.dot(K_mn, w_ng) + np.dot(x_ma, lin_ag) + trans_g[None,:]
+    D_mn = tps_normals_deriv_mat(x_ma, x_na, n_na)
+    return np.dot(K_mn, w_ng) + np.dot(D_mn, wn_ng) + np.dot(x_ma, lin_ag) + trans_g[None,:]
 
 def tps_grad(x_ma, lin_ag, _trans_g, w_ng, x_na):
     _N, D = x_na.shape
