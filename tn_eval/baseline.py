@@ -255,7 +255,7 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     EY = co.matrix(e_y)
     
     K = co.matrix(K_nn)
-    K2 = co.matrix(np.sqrt(-K_nn))
+    K2 = co.matrix(np.sqrt(-K_nn)) # ----> This is a big bug
     P = co.matrix(Pmat)
     
     W = co.matrix(np.diag(wt_n))
@@ -285,7 +285,7 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
         constraints.append(N2 == cp.sqrt(W)*N1)
     # For bending cost
     V3 = cp.Variable(n,d)
-    constraints.append(V3 == K2*A)
+    constraints.append(V3 == K2*A) # Big bug.
     # For rotation cost
     V4 = cp.Variable(d,d)
     constraints.append(V4 == cp.sqrt(R)*B)

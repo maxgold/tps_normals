@@ -309,7 +309,7 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     constraints.append(V2 == cp.sqrt(W)*V1)
     # For bending cost
     V3 = cp.Variable(n,d)
-    constraints.append(V3 == K2*A)
+    constraints.append(V3 == K2*A) ## ---> huge bug
     # For rotation cost
     V4 = cp.Variable(d,d)
     constraints.append(V4 == cp.sqrt(R)*B)
@@ -322,7 +322,9 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
      
     
     p = cp.Problem(objective, constraints)
-    p.solve()
+    print 'aaaaaaa'
+    p.solve(verbose=True)
+    print 'aaaaaaab'
     
     return np.array(B.value), np.squeeze(np.array(c.value)) , np.array(A.value)
 

@@ -246,8 +246,8 @@ def test_normals_new (pts1, pts2=None, reduce_dim=True):
     if pts2 is None:
         noise = np.random.normal(0,0.008,pts1.shape[0])
         print max(noise)
-        #pts2 =  np.dot(pts1,np.array([[0,1], [-1,0]])) + noise[:,None]*nms1*0.1
-        pts2 =  pts1 + noise[:,None]*nms1
+        pts2 =  np.dot(pts1,np.array([[0,1,0], [-1,0,0],[0,0,1]])) + noise[:,None]*nms1
+        #pts2 =  pts1 + noise[:,None]*nms1
         nms2 = tu.find_all_normals_naive(pts2, wsize=0.15,flip_away=True, project_lower_dim=False)
     else:
         pts2 = clouds.downsample(pts2, 0.02).astype('float64')
@@ -259,11 +259,12 @@ def test_normals_new (pts1, pts2=None, reduce_dim=True):
     print np.c_[pts1,np.zeros((pts1.shape[0],1))].shape
     print np.c_[pts2,np.zeros((pts2.shape[0],1))].shape
 
-    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
-    f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.02)
-    
+
+    #f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+#     f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.02)
+    f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=0.15, delta=0.02)    
     mlab.figure(1)
-    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    #mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
     #mlab.show()
     mlab.figure(2)
     #mlab.clf()
