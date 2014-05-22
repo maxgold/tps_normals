@@ -76,13 +76,13 @@ def test_normals3 ():
     mayavi_utils.plot_lines(lines)
     mlab.show()
 
-def test_normals_pts (pts, wsize = None, scale_factor=0.01):
+def test_normals_pts (pts, wsize = None, delta=0.01, scale_factor=0.01):
     """
     Test normals.
     """
     if wsize is None: wsize = 0.02
     nms = tu.find_all_normals_naive(pts,wsize=wsize,flip_away=True,project_lower_dim=True)
-    pts_nm = pts + nms*0.01
+    pts_nm = pts + nms*delta
     
     lines = [np.c_[p1,p2].T for p1,p2 in zip(pts,pts_nm)]
     
@@ -238,7 +238,7 @@ def test_normals_cvx (pts1):
 
 
 def test_normals_new (pts1, pts2=None, reduce_dim=True):
-    pts1 = clouds.downsample(pts1, 0.02).astype('float64')
+    #pts1 = clouds.downsample(pts1, 0.02).astype('float64')
     if pts1.shape[1] == 3 and reduce_dim:
         pts1 = tu.project_lower_dim(pts1)
     print pts1.shape
@@ -250,7 +250,7 @@ def test_normals_new (pts1, pts2=None, reduce_dim=True):
         #pts2 =  pts1 + noise[:,None]*nms1
         nms2 = tu.find_all_normals_naive(pts2, wsize=0.15,flip_away=True, project_lower_dim=False)
     else:
-        pts2 = clouds.downsample(pts2, 0.02).astype('float64')
+        #pts2 = clouds.downsample(pts2, 0.02).astype('float64')
         if pts2.shape[1] == 3 and reduce_dim:
             pts2 = tu.project_lower_dim(pts2)
         pts2 = pts2[:pts1.shape[0], :]
@@ -260,21 +260,74 @@ def test_normals_new (pts1, pts2=None, reduce_dim=True):
     print np.c_[pts2,np.zeros((pts2.shape[0],1))].shape
 
 
-    #f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
 #     f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.02)
-    f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=0.15, delta=0.02)    
+    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=1.4, delta=0.2)    
     mlab.figure(1)
     #mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
     #mlab.show()
     mlab.figure(2)
     #mlab.clf()
-    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
     mlab.show()
 
+def linspace(a,b,n):
+    # Returns n numbers evenly spaced between a and b, inclusive
+    return [(a+(b-a)*i/(n-1)) for i in xrange(n)]
+
+def gen_circle_points (rad, n):
+    # Generates points on a circle in 2D
+    angs = linspace(0.,2*np.pi,n+1)[:-1]
+    return np.array([(rad*np.cos(a), rad*np.sin(a)) for a in angs])
+
+def gen_circle_points_pulled_in (rad, n, m, alpha):
+    # Generates points on a circle in 2D
+    # alpha is maximum pulling weight (between 0 and 1). 1 is max and results in 0
+    # Pulls in approximately m points around angle pi
+    angs = linspace(0.,2*np.pi,n+1)[:-1]
+    alphas = np.zeros(n)
+    rm = int(np.floor((m+1.0)/2))
+    pos_alphas = linspace(0,alpha,rm+1)
+    alphas[int(np.floor((n+1)/2))-rm:int(np.floor((n+1)/2))+1] = pos_alphas
+    alphas[int(np.floor((n+1)/2))+1:int(np.floor((n+1)/2))+m-rm+2] = list(reversed(pos_alphas[0:(m-rm+1)]))
+    
+    alphas = 1-alphas
+    pts = alphas[:,None]*np.array([(rad*np.cos(a), rad*np.sin(a)) for a in angs])
+#     import IPython
+#     IPython.embed()
+    return pts
+
+
+def test_normals_new2 ():
+    
+    pts1 = gen_circle_points(0.5, 30)
+    pts2 = gen_circle_points_pulled_in(0.5,30,4,0.2)#gen_circle_points(0.5, 30) + np.array([0.1,0.1])
+    
+    
+    #test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
+    
+#     print pts1.shape, pts2.shape
+#     print np.c_[pts1,np.zeros((pts1.shape[0],1))].shape
+#     print np.c_[pts2,np.zeros((pts2.shape[0],1))].shape
+
+
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=False)
+    
+    import IPython
+    IPython.embed()
+    mlab.figure(1)
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
+    mlab.show()
+
+
 if __name__=='__main__':
-    import h5py
-    hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
-    pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
-    pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
-    print pts2.shape
-    test_normals_new(pts1, reduce_dim=False)
+#     import h5py
+#     hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
+#     pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
+#     pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
+#     p1 = np.array([[1, 1],[1, 0],[0, 0],[0, 1]])
+#     p2 = np.array([[1, 1],[1, 0],[-0.15, -0.15],[0, 1]])
+#     print p1.shape
+#     test_normals_new(p1, pts2=p2, reduce_dim=True)
+    test_normals_new2()

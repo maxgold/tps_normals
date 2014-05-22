@@ -235,6 +235,8 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
     K_nn = tps.tps_kernel_matrix(x_na)
+    _,_,VT = nlg.svd(np.c_[x_na,np.ones((x_na.shape[0],1))].T)
+    Nmat = VT.T[:,d+1:]
     rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)    
     # Generate the normals
     e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
@@ -245,7 +247,7 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     else:
         raise NotImplementedError
 
-    A = cp.Variable(n,d)
+    A = cp.Variable(Nmat.shape[1],d)
     B = cp.Variable(d,d)
     c = cp.Variable(d,1)
     
@@ -255,7 +257,7 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     EY = co.matrix(e_y)
     
     K = co.matrix(K_nn)
-    K2 = co.matrix(np.sqrt(-K_nn)) # ----> This is a big bug
+    N = co.matrix(Nmat)
     P = co.matrix(Pmat)
     
     W = co.matrix(np.diag(wt_n))
@@ -266,7 +268,7 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     
     # For correspondences
     V1 = cp.Variable(n,d)
-    constraints.append(V1 == Y-K*A-X*B - ones*c.T)
+    constraints.append(V1 == Y-K*N*A-X*B - ones*c.T)
     V2 = cp.Variable(n,d)
     constraints.append(V2 == cp.sqrt(W)*V1)
     # For normals
@@ -274,21 +276,25 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
 #         import IPython
 #         IPython.embed()
         N1 = cp.Variable(n,n)
-        constraints.append(N1 == (P*A-EX*B)*EY.T)
+        constraints.append(N1 == (P*N*A-EX*B)*EY.T)
         
 #         N2 = cp.Variable(n)
 #         constraints.extend([N2[i] == N1[i,i] for i in xrange(n)])
     else:
         N1 = cp.Variable(n,d)
-        constraints.append(N1 == EY-P*A-EX*B)
+        constraints.append(N1 == EY-P*N*A-EX*B)
         N2 = cp.Variable(n,d)
         constraints.append(N2 == cp.sqrt(W)*N1)
     # For bending cost
-    V3 = cp.Variable(n,d)
-    constraints.append(V3 == K2*A) # Big bug.
+    Vb = []
+    Q = [] # for quadratic forms
+    for i in range(d):
+        Vb.append(cp.Variable(Nmat.shape[1],1))
+        constraints.append(Vb[-1] == A[:,i])
+        Q.append(cp.quad_form(Vb[-1], N.T*K*N))
     # For rotation cost
-    V4 = cp.Variable(d,d)
-    constraints.append(V4 == cp.sqrt(R)*B)
+    V3 = cp.Variable(d,d)
+    constraints.append(V3 == cp.sqrt(R)*B)
     
     # Orthogonality constraints for bending
     constraints.extend([X.T*A == 0, ones.T*A == 0])
@@ -296,9 +302,9 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     # TPS objective
     if use_dot:
         objective = cp.Minimize(sum(cp.square(V2)) - normal_coef*sum([N1[i,i] for i in xrange(n)]) 
-                                + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
+                                + bend_coef*sum(Q) + sum(cp.square(V3)))
     else:
-        objective = cp.Minimize(sum(cp.square(V2)) + normal_coef*sum(cp.square(N2)) + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
+        objective = cp.Minimize(sum(cp.square(V2)) + normal_coef*sum(cp.square(N2)) + bend_coef*sum(Q) + sum(cp.square(V3)))
      
     
     p = cp.Problem(objective, constraints)

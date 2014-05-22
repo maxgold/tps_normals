@@ -3,7 +3,7 @@ Functions for fitting and applying thin plate spline transformations
 """
 
 
-import numpy as np
+import numpy as np, numpy.linalg as nlg
 import scipy.spatial.distance as ssd
 import scipy.optimize as opt
 
@@ -277,24 +277,28 @@ def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n):
     Theta = solve_eqp1(H,f,A)
     
     return Theta[1:d+1], Theta[0], Theta[d+1:]
-
+    
 
 def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     """
     Use cvx instead of just matrix multiply.
+    Working with null space of matrices.
     """
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
     n,d = x_na.shape
     K_nn = tps_kernel_matrix(x_na)
+    _,_,VT = nlg.svd(np.c_[x_na,np.ones((x_na.shape[0],1))].T)
+    Nmat = VT.T[:,d+1:]
     rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
     
-    A = cp.Variable(n,d)
+    
+    A = cp.Variable(Nmat.shape[1],d)
     B = cp.Variable(d,d)
     c = cp.Variable(d,1)
     
     Y = co.matrix(y_ng)
     K = co.matrix(K_nn)
-    K2 = co.matrix(np.sqrt(-K_nn))
+    N = co.matrix(Nmat)
     X = co.matrix(x_na)
     W = co.matrix(np.diag(wt_n))
     R = co.matrix(rot_coefs)
@@ -304,30 +308,31 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     
     # For correspondences
     V1 = cp.Variable(n,d)
-    constraints.append(V1 == Y-K*A-X*B - ones*c.T)
+    constraints.append(V1 == Y-K*N*A-X*B - ones*c.T)
     V2 = cp.Variable(n,d)
     constraints.append(V2 == cp.sqrt(W)*V1)
     # For bending cost
-    V3 = cp.Variable(n,d)
-    constraints.append(V3 == K2*A) ## ---> huge bug
+    Vb = []
+    Q = [] # for quadratic forms
+    for i in range(d):
+        Vb.append(cp.Variable(Nmat.shape[1],1))
+        constraints.append(Vb[-1] == A[:,i])
+        Q.append(cp.quad_form(Vb[-1], N.T*K*N))
     # For rotation cost
-    V4 = cp.Variable(d,d)
-    constraints.append(V4 == cp.sqrt(R)*B)
+    # Element wise square root actually works here as R is diagonal and positive
+    V3 = cp.Variable(d,d)
+    constraints.append(V3 == cp.sqrt(R)*B)
     
-    # Orthogonality constraints for bending
-    constraints.extend([X.T*A == 0, ones.T*A == 0])
+    # Orthogonality constraints for bending are taken care of already because working with the null space
+    #constraints.extend([X.T*A == 0, ones.T*A == 0])
     
     # TPS objective
-    objective = cp.Minimize(sum(cp.square(V2)) + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
-     
+    objective = cp.Minimize(sum(cp.square(V2)) + bend_coef*sum(Q) + sum(cp.square(V3)))
     
     p = cp.Problem(objective, constraints)
-    print 'aaaaaaa'
     p.solve(verbose=True)
-    print 'aaaaaaab'
     
-    return np.array(B.value), np.squeeze(np.array(c.value)) , np.array(A.value)
-
+    return np.array(B.value), np.squeeze(np.array(c.value)) , Nmat.dot(np.array(A.value))
     
     
 def tps_fit2(x_na, y_ng, bend_coef, rot_coef, wt_n=None):

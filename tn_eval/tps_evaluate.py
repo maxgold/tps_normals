@@ -71,7 +71,7 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     N = P + M.T.dot(Linv).dot(M) # + log(del/delta) ---> assuming all the normals are of same length
     
     # Evaluation matrix for just the change slopes
-    Q = (-2*np.log(delta))*np.eye(dim*n) - slg.block_diag(*[N]*dim)
+    Q = -2*np.log(delta)*(np.eye(dim*n) +(1/d*np.log(delta))*slg.block_diag(*([N]*dim)))
     
     # coefficients of orthogonalized slope elements
     w_diff = nlg.inv(Q).dot(d_diff)
@@ -244,7 +244,7 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     
     # For everything
     V1 = cp.Variable(2*n+d+1,d)
-    constraints.append(V1 == LE*A - Y_EY)
+    constraints.append(V1 == 0)#LE*A - Y_EY)
     constraints.extend([ones.T*A == 0, X_EX.T*A == 0])
     # Bend cost
     V = cp.Variable(d,d)
