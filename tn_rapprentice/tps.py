@@ -41,7 +41,7 @@ def tps_apply_kernel(distmat, dim):
     """
 
     if dim==2:       
-        return 4 * distmat**2 * np.log(distmat+1e-20)
+        return distmat**2 * np.log(distmat+1e-20)
         
     elif dim ==3:
         return -distmat
@@ -284,6 +284,7 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     Use cvx instead of just matrix multiply.
     Working with null space of matrices.
     """
+
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
     n,d = x_na.shape
     K_nn = tps_kernel_matrix(x_na)
@@ -312,12 +313,13 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     V2 = cp.Variable(n,d)
     constraints.append(V2 == cp.sqrt(W)*V1)
     # For bending cost
-    Vb = []
+    #Vb = []
     Q = [] # for quadratic forms
     for i in range(d):
-        Vb.append(cp.Variable(Nmat.shape[1],1))
-        constraints.append(Vb[-1] == A[:,i])
-        Q.append(cp.quad_form(Vb[-1], N.T*K*N))
+        #Vb.append(cp.Variable(Nmat.shape[1],1))
+        #constraints.append(Vb[-1] == A[:,i])
+        #Q.append(cp.quad_form(Vb[-1], N.T*K*N))
+        Q.append(cp.quad_form(A[:,i], N.T*K*N))
     # For rotation cost
     # Element wise square root actually works here as R is diagonal and positive
     V3 = cp.Variable(d,d)
@@ -328,7 +330,6 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     
     # TPS objective
     objective = cp.Minimize(sum(cp.square(V2)) + bend_coef*sum(Q) + sum(cp.square(V3)))
-    
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
     

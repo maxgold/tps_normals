@@ -10,6 +10,7 @@ Working in 2D for now. Have to rederive this for 3D.
 
 Slope functions are old Kernels for landmarks + derivatives for slopes.
 """
+from __future__ import division
 import numpy as np, numpy.linalg as nlg
 import scipy.linalg as slg
 import cvxopt as co, cvxpy as cp
@@ -18,33 +19,16 @@ import cvxopt as co, cvxpy as cp
 import tps_utils as tu
 from tn_rapprentice import registration, tps
 
-def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.02):
+def transformed_normal_direction(x,ex,f,delta):
+    y = f.transform_points(x)
+    ey = (f.transform_points(x + delta*ex)-y)/delta
+    return y, ey
+
+def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.0001):
     """
     delta: Normal length.
     """
     n,dim = x_na.shape
-    # Normals
-    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
-    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
-    
-    ## First, we solve the landmark only spline.
-    f = registration.fit_ThinPlateSpline(x_na, y_ng, bend_coef, rot_coef, wt_n, use_cvx=True)
-    
-#     import IPython
-#     IPython.embed()
-    
-    # What are the slope values caused by these splines at the points?
-    # It can be found using the Jacobian at the point.
-    # Finding what the normals are being mapped to
-    d0 = np.empty((dim,0))
-    for x, nm in zip(x_na,e_x):
-        d0 = np.c_[d0,tu.tps_jacobian(f, x, dim).dot(nm)]
-    d0 = d0.reshape((d0.shape[1]*dim,1))
-    # Desired slopes
-    d = e_y.T.reshape((e_y.shape[0]*dim,1))
-    
-    ## Let's find the difference of the slopes to get the edge correction.
-    d_diff = d - d0
     
     # Finding the evaluation matrix.
     K = tu.tps_kernel_mat(x_na)
@@ -52,6 +36,30 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     # normal eval matrix
     L = np.r_[np.c_[K,Q1],np.c_[Q1.T,np.zeros((dim+1,dim+1))]]
     Linv = nlg.inv(L)
+    
+    # Normals
+    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(dim==3))
+    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(dim==3))
+    
+    ## First, we solve the landmark only spline.
+    f = registration.fit_ThinPlateSpline(x_na, y_ng, bend_coef=0, rot_coef=0, wt_n=wt_n, use_cvx=True)
+    
+    # What are the slope values caused by these splines at the points?
+    # It can be found using the Jacobian at the point.
+    # Finding what the normals are being mapped to
+    d0 = np.empty((dim,0))
+    for x, nm in zip(x_na,e_x):
+        d0 = np.c_[d0,tu.tps_jacobian(f, x, dim).dot(nm)]
+        
+    d0 = d0.reshape((d0.shape[1]*dim,1))
+
+    # Desired slopes
+    d = e_y.T.reshape((e_y.shape[0]*dim,1))
+    
+
+    
+    ## Let's find the difference of the slopes to get the edge correction.
+    d_diff = d - d0
     
     M = np.zeros((n,n))
     P = np.zeros((n,n))
@@ -67,11 +75,11 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
                 if i < j:
                     P[i,j] = P[j,i] = tu.deriv2_U(p1,p2,n1,n2,dim)
     M = np.r_[M,np.zeros((1,n)),e_x.T]
-    T  = np.r_[np.c_[np.eye(n+dim+1), np.zeros((n+dim+1,n))],np.c_[M.T.dot(Linv), np.eye(n)]]
-    N = P + M.T.dot(Linv).dot(M) # + log(del/delta) ---> assuming all the normals are of same length
+    T  = np.r_[np.c_[np.eye(n+dim+1), np.zeros((n+dim+1,n))],np.c_[-M.T.dot(Linv), np.eye(n)]]
+    N = P + M.T.dot(Linv).dot(M) # + 2*log(del/delta) ---> assuming all the normals are of same length
     
     # Evaluation matrix for just the change slopes
-    Q = -2*np.log(delta)*(np.eye(dim*n) +(1/d*np.log(delta))*slg.block_diag(*([N]*dim)))
+    Q = -2*np.log(delta)*(np.eye(dim*n) +1.0/(2*np.log(delta))*slg.block_diag(*([N]*dim)))
     
     # coefficients of orthogonalized slope elements
     w_diff = nlg.inv(Q).dot(d_diff)

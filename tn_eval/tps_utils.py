@@ -4,11 +4,13 @@
 import numpy as np, numpy.linalg as nlg
 import scipy.spatial.distance as ssd
 
-def tps_kernel(x,y,dim=3):
+def tps_kernel(x,y,dim=None):
     """
     Kernel function for tps.
     Only dim = 2 and 3 implemented.
     """
+    if dim is None:
+        dim = x.shape[0]
     assert x.shape[0] == dim and y.shape[0] == dim 
     if dim==2:
         r = nlg.norm(x-y)
@@ -33,11 +35,13 @@ def tps_kernel_mat (Xs):
         raise NotImplementedError
     
 
-def deriv_U(x,y,dr,dim=3):
+def deriv_U(x,y,dr,dim=None):
     """
     First derivative for kernel.
     Only dim = 2 and 3 implemented.
     """
+    if dim is None:
+        dim = x.shape[0]
     assert x.shape[0] == dim and y.shape[0] == dim and dr.shape[0] == dim
     r = (x-y)
     nr = nlg.norm(r) 
@@ -51,11 +55,13 @@ def deriv_U(x,y,dr,dim=3):
         raise NotImplementedError
     
 
-def deriv2_U(x,y,dr1,dr2,dim=3):
+def deriv2_U(x,y,dr1,dr2,dim=None):
     """
     Second derivative for kernel.
     Only dim = 2 and 3 implemented.
     """
+    if dim is None:
+        dim = x.shape[0]
     assert x.shape[0] == dim and y.shape[0] == dim and dr1.shape[0] == dim and dr2.shape[0] == dim
     r = (x-y)
     nr = nlg.norm(r)
@@ -68,10 +74,12 @@ def deriv2_U(x,y,dr1,dr2,dim=3):
     else:
         raise NotImplementedError
 
-def tps_jacobian_single_term (pt, jpt, dim=3):
+def tps_jacobian_single_term (pt, jpt, dim=None):
     """
     Finds Jacobian of single term
     """
+    if dim is None:
+        dim = len(pt)
     assert len(pt) == dim and len(jpt) == dim
     
     r = (pt - jpt)
@@ -85,10 +93,12 @@ def tps_jacobian_single_term (pt, jpt, dim=3):
     else: raise NotImplementedError
         
     
-def tps_jacobian (f, pt, dim=3):
+def tps_jacobian (f, pt, dim=None):
     """
     Finds the Jacobian Matrix at the point pt.
     """
+    if dim is None:
+        dim = len(pt)
     assert len(pt) == dim
     jac = np.copy(f.lin_ag.T)    
     for jpt, w in zip(f.x_na, f.w_ng):
