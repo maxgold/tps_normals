@@ -301,10 +301,10 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
     
     # TPS objective
     if use_dot:
-        objective = cp.Minimize(sum(cp.square(V2)) - normal_coef*sum([N1[i,i] for i in xrange(n)]) 
-                                + bend_coef*sum(Q) + sum(cp.square(V3)))
+        objective = cp.Minimize(cp.sum_squares(V2) - normal_coef*sum([N1[i,i] for i in xrange(n)]) 
+                                + bend_coef*sum(Q) + cp.sum_squares(V3))
     else:
-        objective = cp.Minimize(sum(cp.square(V2)) + normal_coef*sum(cp.square(N2)) + bend_coef*sum(Q) + sum(cp.square(V3)))
+        objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*sum(Q) + cp.sum_squares(V3))
      
     
     p = cp.Problem(objective, constraints)

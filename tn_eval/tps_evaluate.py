@@ -187,8 +187,8 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     constraints.extend([X.T*A1 +EX.T*A2== 0, ones.T*A1 == 0])
     
     # TPS objective
-    #objective = cp.Minimize(sum(cp.square(V2)) + normal_coef*sum(cp.square(N2)) + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
-    objective = cp.Minimize(sum(cp.square(V2))  + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
+    #objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4))
+    objective = cp.Minimize(cp.sum_squares(V2)  + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4))
 
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
@@ -259,8 +259,8 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     constraints.append(V == Y_EY.T*A)#Y.T*A1+EY.T*A2)
     
     # TPS objective
-    #objective = cp.Minimize(sum(cp.square(V2)) + normal_coef*sum(cp.square(N2)) + bend_coef*sum(cp.square(V3)) + sum(cp.square(V4)))
-    objective = cp.Minimize(sum(cp.square(V1)) + bend_coef*sum([V[i,i] for i in range(d)]))
+    #objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4)
+    objective = cp.Minimize(cp.sum_squares(V1) + bend_coef*sum([V[i,i] for i in range(d)]))
 
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)

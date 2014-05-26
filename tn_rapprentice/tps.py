@@ -329,7 +329,9 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     #constraints.extend([X.T*A == 0, ones.T*A == 0])
     
     # TPS objective
-    objective = cp.Minimize(sum(cp.square(V2)) + bend_coef*sum(Q) + sum(cp.square(V3)))
+    # import IPython
+    # IPython.embed()
+    objective = cp.Minimize(cp.sum_squares(V2) + bend_coef*sum(Q) + cp.sum_squares(V3))
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
     

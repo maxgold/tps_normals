@@ -339,12 +339,12 @@ def test_normals_new3 ():
     #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
     f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.001)
     #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=1.4, delta=0.2)    
-    mlab.figure(1)
+    mlab.figure(1, bgcolor=(0,0,0))
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
     test_normals_pts(np.c_[f1.transform_points(pts1),np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
     test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
     #mlab.show()
-    mlab.figure(2)
+    mlab.figure(2,bgcolor=(0,0,0))
     #mlab.clf()
     mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
     test_normals_pts(np.c_[f2.transform_points(pts1),np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
@@ -354,11 +354,11 @@ def test_normals_new3 ():
 
 if __name__=='__main__':
     import h5py
-    hdfh = h5py.File('/media/data_/human_demos_DATA/demos/overhand120/overhand120.h5','r')
+    hdfh = h5py.File('/home/sibi/sandbox/tps_normals/data/overhand120.h5','r')
     pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
     pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
     p1 = np.array([[1, 1],[1, 0],[0, 0],[0, 1]])
     p2 = np.array([[1, 1],[1, 0],[-0.15, -0.15],[0, 1]])
 #     print p1.shape
-    test_normals_new(pts1, pts2=None, reduce_dim=True)
-    #test_normals_new3()
+    # test_normals_new(pts1, pts2=None, reduce_dim=True)
+    test_normals_new3()
