@@ -337,7 +337,8 @@ def test_normals_new3 ():
 
     f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
     #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
-    f2 = te.tps_eval(pts1, pts2, bend_coef=0.0, rot_coef=0*1e-5, wt_n=None, nwsize=0.15, delta=0.02)
+    #f2 = te.tps_eval(pts1, pts2, bend_coef=0.0, rot_coef=0*1e-5, wt_n=None, nwsize=0.15, delta=0.02)
+    f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.0, rot_coef=0*1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
     #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=1.4, delta=0.2)    
     mlab.figure(1, bgcolor=(0,0,0))
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)

@@ -146,7 +146,7 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
 
     # A1 = cp.Variable(n,d) #f.w_ng
     # A2 = cp.Variable(n,d) #f.wn_ng
-    A = cp.Variable(Nmat.shape[1],d) # stacked form of f.w_ng and f.wn_ng
+    A = cp.Variable(NSmat.shape[1],d) # stacked form of f.w_ng and f.wn_ng
     B = cp.Variable(d,d) #f.lin_ag
     c = cp.Variable(d,1) #f.trans_g
     
@@ -159,9 +159,12 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     NS = co.matrix(NSmat) # working in the null space of the constraints
     L = co.matrix(Lmat)
     M = co.matrix(Mmat)
-    KM = co.matrix(slg.block_diag(K_nn, Mmat))
-    MDK = co.matrix(slg.block_diag(Mmat.T,DKmat))
+    KM = co.matrix(np.c_[K_nn, Mmat])
+    MDK = co.matrix(np.c_[Mmat.T,DKmat])
     E = co.matrix(Emat)
+
+    import IPython
+    IPython.embed()
     
     W = co.matrix(np.diag(wt_n))
     R = co.matrix(rot_coefs)
