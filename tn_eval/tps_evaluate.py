@@ -42,7 +42,7 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(dim==3))
     
     ## First, we solve the landmark only spline.
-    f = registration.fit_ThinPlateSpline(x_na, y_ng, bend_coef=0, rot_coef=0, wt_n=wt_n, use_cvx=True)
+    f = registration.fit_ThinPlateSpline(x_na, y_ng, bend_coef=bend_coef, rot_coef=rot_coef, wt_n=wt_n, use_cvx=True)
     
     # What are the slope values caused by these splines at the points?
     # It can be found using the Jacobian at the point.
@@ -79,7 +79,8 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     N = P + M.T.dot(Linv).dot(M) # + 2*log(del/delta) ---> assuming all the normals are of same length
     
     # Evaluation matrix for just the change slopes
-    Q = -2*np.log(delta)*(np.eye(dim*n) +1.0/(2*np.log(delta))*slg.block_diag(*([N]*dim)))
+    Q_single_dim = -2*np.log(delta)*(np.eye(n) +1.0/(2*np.log(delta))*N) # for single dimension
+    Q = slg.block_diag(*[Q_single_dim]*dim)
     
     # coefficients of orthogonalized slope elements
     w_diff = nlg.inv(Q).dot(d_diff)
@@ -108,9 +109,9 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
 
     # Generate the normals
-    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
-    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
-    K_nn = tps.tps_kernel_matrix(x_na)
+    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(d==3))
+    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(d==3))
+    K_nn = tu.tps_kernel_mat(x_na)
     Qmat = np.c_[np.ones((n,1)),x_na]
     Lmat = np.r_[np.c_[K_nn,Qmat],np.c_[Qmat.T,np.zeros((d+1,d+1))]]
     Mmat = np.zeros((n,n))
@@ -129,19 +130,23 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     #Mmat = np.r_[Mmat,np.zeros((1,n)),e_x.T]
 #     import IPython
 #     IPython.embed()
-    DKmat = (np.diag([-np.log(delta)]*n)) - Pmat 
+    DKmat = -2*(np.diag([np.log(delta)]*n)) - Pmat
+    Emat = np.r_[np.c_[K_nn, Mmat],np.c_[Mmat.T, DKmat]]
     
+    # working with the kernel of the constraints
+    _,_,VT = nlg.svd(np.r_[np.c_[x_na,np.ones((x_na.shape[0],1))], np.c_[e_x,np.zeros((e_x.shape[0],1))]].T)
+    NSmat = VT.T[:,d+1:] # null space
+    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
 
-    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)    
+    # if d == 3:
+    #     x_diff = np.transpose(x_na[None,:,:] - x_na[:,None,:],(0,2,1))
+    #     Pmat = e_x.dot(x_diff)[range(n),range(n),:]/(K_nn+1e-20)
+    # else:
+    #     raise NotImplementedError
 
-    if d == 3:
-        x_diff = np.transpose(x_na[None,:,:] - x_na[:,None,:],(0,2,1))
-        Pmat = e_x.dot(x_diff)[range(n),range(n),:]/(K_nn+1e-20)
-    else:
-        raise NotImplementedError
-
-    A1 = cp.Variable(n,d) #f.w_ng
-    A2 = cp.Variable(n,d) #f.wn_ng
+    # A1 = cp.Variable(n,d) #f.w_ng
+    # A2 = cp.Variable(n,d) #f.wn_ng
+    A = cp.Variable(Nmat.shape[1],d) # stacked form of f.w_ng and f.wn_ng
     B = cp.Variable(d,d) #f.lin_ag
     c = cp.Variable(d,1) #f.trans_g
     
@@ -151,11 +156,12 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     EY = co.matrix(e_y)
 
     K = co.matrix(K_nn)
+    NS = co.matrix(NSmat) # working in the null space of the constraints
     L = co.matrix(Lmat)
     M = co.matrix(Mmat)
-    DK = co.matrix(DKmat)
-    K2 = co.matrix(np.sqrt(-K_nn))
-    P = co.matrix(Pmat)
+    KM = co.matrix(slg.block_diag(K_nn, Mmat))
+    MDK = co.matrix(slg.block_diag(Mmat.T,DKmat))
+    E = co.matrix(Emat)
     
     W = co.matrix(np.diag(wt_n))
     R = co.matrix(rot_coefs)
@@ -165,37 +171,38 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     
     # For correspondences
     V1 = cp.Variable(n,d)
-    #constraints.append(V1 == K*A1+X*B+ones*c.T - Y)
-    constraints.append(V1 == K*A1+X*B+ones*c.T+M*A2 - Y)
+    constraints.append(V1 == KM*NS*A+X*B+ones*c.T - Y)
     V2 = cp.Variable(n,d)
     constraints.append(V2 == cp.sqrt(W)*V1)
     # For normals
     N1 = cp.Variable(n,d)
-    constraints.append(N1 == M.T*A1+EX*B+DK*A2 - EY)
+    constraints.append(N1 == MDK*NS*A+EX*B - EY)
     N2 = cp.Variable(n,d)
     constraints.append(N2 == cp.sqrt(W)*N1)
     # For bending cost
-    V3 = cp.Variable(n,d)
-    constraints.append(V3 == K2*A1)#Y.T*A1+EY.T*A2)
+    Quad = [] # for quadratic forms
+    for i in range(d):
+        Quad.append(cp.quad_form(A[:,i], NS.T*E*NS))
     # For rotation cost
     
-    V4 = cp.Variable(d,d)
-    constraints.append(V4 == cp.sqrt(R)*B)
+    V3 = cp.Variable(d,d)
+    constraints.append(V3 == cp.sqrt(R)*B)
     
-    # Orthogonality constraints for bending
-    #constraints.extend([X.T*A1 == 0, ones.T*A1 == 0])
-    constraints.extend([X.T*A1 +EX.T*A2== 0, ones.T*A1 == 0])
+    # Orthogonality constraints for bending -- don't need these because working in the nullspace
+    # constraints.extend([X.T*A1 +EX.T*A2== 0, ones.T*A1 == 0])
     
     # TPS objective
     #objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4))
-    objective = cp.Minimize(cp.sum_squares(V2)  + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4))
+    objective = cp.Minimize(cp.sum_squares(V2)  + bend_coef*sum(Quad) + cp.sum_squares(V3))
 
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
-     
+    
+    Aval = NSmat.dot(np.array(A))
     fn = registration.ThinPlateSplineNormals(d)
     fn.x_na, fn.n_na = x_na, e_x
-    fn.w_ng, fn.trans_g, fn.lin_ag, fn.wn_ng= np.array(A1.value), np.squeeze(np.array(c.value)), np.array(B.value), np.array(A2.value)
+    fn.w_ng, f.wn_ng = Aval[0:n,:], Aval[n:,:]
+    fn.w_ng, fn.trans_g, fn.lin_ag, fn.wn_ng= np.squeeze(np.array(c.value)), np.array(B.value)
     import IPython
     IPython.embed()
 
