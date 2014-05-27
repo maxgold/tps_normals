@@ -110,9 +110,12 @@ def tps_fit_normals_cvx(x_na, y_ng, e_x = None, e_y = None, bend_coef=0.1, rot_c
     n,d = x_na.shape
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
 
-    # Generate the normals
-    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(d==3))
-    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(d==3))
+    # Normals
+    if e_x is None:
+        e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(d==3))
+    if e_y is None:
+        e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(d==3))
+
     K_nn = tu.tps_kernel_mat(x_na)
     Qmat = np.c_[np.ones((n,1)),x_na]
     Lmat = np.r_[np.c_[K_nn,Qmat],np.c_[Qmat.T,np.zeros((d+1,d+1))]]
@@ -208,7 +211,7 @@ def tps_fit_normals_cvx(x_na, y_ng, e_x = None, e_y = None, bend_coef=0.1, rot_c
     return fn
 
 
-def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None, delta=0.0001, nwsize=0.02):
+def tps_fit_normals_exact_cvx(x_na, y_ng, e_x = None, e_y = None, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, delta=0.0001, nwsize=0.02):
     """
     Solves as basic a problem as possible from Bookstein --> no limits taken
     Fits normals and points all at once.
@@ -217,9 +220,11 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     n,d = x_na.shape
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
 
-    # Generate the normals
-    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(d==3))
-    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(d==3))
+    # Normals
+    if e_x is None:
+        e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(d==3))
+    if e_y is None:
+        e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(d==3))
     
     xs_na = x_na# - e_x*delta/2
     xf_na = x_na + e_x*delta#/2
