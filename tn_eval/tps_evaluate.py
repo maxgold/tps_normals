@@ -24,7 +24,7 @@ def transformed_normal_direction(x,ex,f,delta):
     ey = (f.transform_points(x + delta*ex)-y)/delta
     return y, ey
 
-def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.0001):
+def tps_eval(x_na, y_ng, e_x = None, e_y = None, bend_coef = 0.1, rot_coef = 1e-5, wt_n = None, nwsize=0.02, delta=0.0001):
     """
     delta: Normal length.
     """
@@ -38,8 +38,10 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     Linv = nlg.inv(L)
     
     # Normals
-    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(dim==3))
-    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(dim==3))
+    if e_x is None:
+        e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(dim==3))
+    if e_y is None:
+        e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(dim==3))
     
     ## First, we solve the landmark only spline.
     f = registration.fit_ThinPlateSpline(x_na, y_ng, bend_coef=bend_coef, rot_coef=rot_coef, wt_n=wt_n, use_cvx=True)
@@ -100,7 +102,7 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     return fn 
 
 
-def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None, delta=0.0001, nwsize=0.02):
+def tps_fit_normals_cvx(x_na, y_ng, e_x = None, e_y = None, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, delta=0.0001, nwsize=0.02):
     """
     Fits normals and points all at once.
     delta: edge length
@@ -257,9 +259,6 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     NS = co.matrix(NSmat) # working in the null space of the constraints
     Y_EY = co.matrix(np.r_[y_ng,np.zeros((d+1,d)),e_y])
     LE = co.matrix(LEmat)
-    
-    ones = co.matrix(np.r_[np.ones((n,1)), np.zeros((n+d+1,1))])
-    X_EX = co.matrix(np.r_[x_na,np.zeros((n+d+1,d))])
     
     constraints = []
     
