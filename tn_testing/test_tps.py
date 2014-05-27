@@ -76,12 +76,13 @@ def test_normals3 ():
     mayavi_utils.plot_lines(lines)
     mlab.show()
 
-def test_normals_pts (pts, wsize = None, delta=0.01, scale_factor=0.01,show=False):
+def test_normals_pts (pts, nms = None, wsize = None, delta=0.01, scale_factor=0.01,show=False):
     """
     Test normals.
     """
     if wsize is None: wsize = 0.02
-    nms = tu.find_all_normals_naive(pts,wsize=wsize,flip_away=True,project_lower_dim=True)
+    if nms is None:
+        nms = tu.find_all_normals_naive(pts,wsize=wsize,flip_away=True,project_lower_dim=True)
     pts_nm = pts + nms*delta
     
     lines = [np.c_[p1,p2].T for p1,p2 in zip(pts,pts_nm)]
@@ -358,37 +359,69 @@ def test_normals_new3 ():
 def test_normals_new4 ():
     #pts1 = clouds.downsample(pts1, 0.02).astype('float64')
     
-    pts1 = gen_circle_points(0.5, 30)
-    pts2 = gen_circle_points_pulled_in(0.5,30,6,0.4)#gen_circle_points(0.5, 30) + np.array([0.1,0.1])
-    wt_n = None#np.linalg.norm(pts1-pts2,axis=1)*2+1
+    pts1 = np.array([[0.,0.], [0.,0.5], [1.,0.], [1.,0.5]])
+    pts2 = np.array([[0.,0.], [0.,0.5], [1.,1.], [1.,1.5]])
+    e1 = np.array([[1.,0.], [1.,0.], [-1.,0.], [-1.,0.]])
+    e2 = np.array([[1.,0.], [1.,0.], [-1.,0.], [-1.,0.]])
     
 
-    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=wt_n, use_cvx=True)
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
     #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
-    #f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
+    #f2 = te.tps_eval(pts1, pts2, e1, e2, bend_coef=0.0, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
     #f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef=10, wt_n=wt_n, nwsize=0.15, delta=0.0001)
-    #f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
-    f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=0.15, delta=0.0001)    
+    f2 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
+    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, nwsize=0.15, delta=0.0001)    
     mlab.figure(1, bgcolor=(0,0,0))
-    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
-    test_normals_pts(np.c_[f1.transform_points(pts1),np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
-    test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=False)
+    _,f1e2 = te.transformed_normal_direction(pts1, e1, f1, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
+    test_normals_pts(np.c_[f1.transform_points(pts1),np.zeros((pts2.shape[0],1))], np.c_[f1e2,np.zeros((f1e2.shape[0],1))], wsize=0.15,delta=0.15)
+    test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], np.c_[e2,np.zeros((e2.shape[0],1))], wsize=0.15,delta=0.15)
     #mlab.show()
     mlab.figure(2,bgcolor=(0,0,0))
     #mlab.clf()
-    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=True)
-    test_normals_pts(np.c_[f2.transform_points(pts1),np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
-    test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
+    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=False)
+    _,f2e2 = te.transformed_normal_direction(pts1, e1, f2, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
+    test_normals_pts(np.c_[f2.transform_points(pts1),np.zeros((pts2.shape[0],1))], np.c_[f2e2,np.zeros((f2e2.shape[0],1))], wsize=0.15,delta=0.15)
+    test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], np.c_[e2,np.zeros((e2.shape[0],1))],  wsize=0.15,delta=0.15)
+    mlab.show()
+
+
+def test_normals_new5 ():
+    #pts1 = clouds.downsample(pts1, 0.02).astype('float64')
+    
+    pts1 = np.array([[0.,0.,0.], [0.,0.5,0.], [0.,1.,0.], [1.,0.,0.25], [1.,0.5,0.25], [1.,1.,0.5]])
+    pts2 = np.array([[0.,0.,0.], [0.,0.5,0.], [0.,1.,0.], [1.,0.,1.], [1.,0.5,1.], [1.,1.,1.25]])
+    e1 = np.array([[1.,0.,0.], [1.,0.,0.], [1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.]])
+    e2 = np.array([[1.,0.,0.], [1.,0.,0.], [1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.]])
+    
+
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    #f2 = te.tps_eval(pts1, pts2, e1, e2, bend_coef=0.01, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
+    #f2 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
+    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, nwsize=0.15, delta=0.0001)    
+    mlab.figure(1, bgcolor=(0,0,0))
+    mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=False)
+    _,f1e2 = te.transformed_normal_direction(pts1, e1, f1, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
+    test_normals_pts(f1.transform_points(pts1), f1e2, wsize=0.15,delta=0.15)
+    test_normals_pts(pts2, e2, wsize=0.15,delta=0.15)
+    #mlab.show()
+    mlab.figure(2,bgcolor=(0,0,0))
+    #mlab.clf()
+    mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=False)
+    _,f2e2 = te.transformed_normal_direction(pts1, e1, f2, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
+    test_normals_pts(f2.transform_points(pts1), f2e2, wsize=0.15,delta=0.15)
+    test_normals_pts(pts2, e2, wsize=0.15,delta=0.15)
     mlab.show()
 
 
 if __name__=='__main__':
-    import h5py
-    hdfh = h5py.File('/home/sibi/sandbox/tps_normals/data/overhand120.h5','r')
-    pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
-    pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
-    p1 = np.array([[1, 1],[1, 0],[0, 0],[0, 1]])
-    p2 = np.array([[1, 1],[1, 0],[-0.15, -0.15],[0, 1]])
+#     import h5py
+#     hdfh = h5py.File('/home/sibi/sandbox/tps_normals/data/overhand120.h5','r')
+#     pts1 = np.asarray(hdfh['demo00022']['seg00']['cloud_xyz'], dtype='float64')
+#     pts2 = np.asarray(hdfh['demo00081']['seg00']['cloud_xyz'], dtype='float64')
+#     p1 = np.array([[1, 1],[1, 0],[0, 0],[0, 1]])
+#     p2 = np.array([[1, 1],[1, 0],[-0.15, -0.15],[0, 1]])
 #     print p1.shape
     # test_normals_new(pts1, pts2=None, reduce_dim=True)
-    test_normals_new3()
+    test_normals_new4()
