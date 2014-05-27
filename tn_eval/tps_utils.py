@@ -37,7 +37,7 @@ def tps_kernel_mat (Xs):
 
 def deriv_U(x,y,dr,dim=None):
     """
-    First derivative for kernel.
+    First derivative for kernel: U'(x-y) in the direction of dr
     Only dim = 2 and 3 implemented.
     """
     if dim is None:

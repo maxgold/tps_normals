@@ -10,7 +10,7 @@ from tn_rapprentice.registration import tps_rpm_bij, fit_ThinPlateSpline
 from tn_visualization import mayavi_utils
 from tn_visualization.mayavi_plotter import PlotterInit, gen_custom_request, gen_mlab_request
 
-np.set_printoptions(precision=4, suppress=True)
+np.set_printoptions(precision=4, suppress=True, threshold=400)
 
 def test_normals ():
     """
@@ -333,13 +333,16 @@ def test_normals_new3 ():
     #pts1 = clouds.downsample(pts1, 0.02).astype('float64')
     
     pts1 = gen_circle_points(0.5, 30)
-    pts2 = gen_circle_points_pulled_in(0.5,30,4,0.2)#gen_circle_points(0.5, 30) + np.array([0.1,0.1])
+    pts2 = gen_circle_points_pulled_in(0.5,30,6,0.4)#gen_circle_points(0.5, 30) + np.array([0.1,0.1])
+    wt_n = None#np.linalg.norm(pts1-pts2,axis=1)*2+1
+    
 
-    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=wt_n, use_cvx=True)
     #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
-    #f2 = te.tps_eval(pts1, pts2, bend_coef=0.0, rot_coef=0*1e-5, wt_n=None, nwsize=0.15, delta=0.02)
-    f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.0, rot_coef=0*1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
-    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=1.4, delta=0.2)    
+    #f2 = te.tps_eval(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
+    #f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef=10, wt_n=wt_n, nwsize=0.15, delta=0.0001)
+    #f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
+    f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 1, wt_n=None, nwsize=0.15, delta=0.0001)    
     mlab.figure(1, bgcolor=(0,0,0))
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=True)
     test_normals_pts(np.c_[f1.transform_points(pts1),np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)

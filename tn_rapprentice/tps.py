@@ -71,7 +71,7 @@ def tps_normals_deriv_mat(x_ma,x_na, n_na):
     for j in range(n):
         p, nm = x_na[j,:], n_na[j,:]
         for i in range(m):
-            D_mn[i,j] = -tu.deriv_U(p,x_ma[i,:],nm,d)
+            D_mn[i,j] = -tu.deriv_U(x_ma[i,:],p,nm,d)
 
     return D_mn
 
@@ -301,7 +301,7 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     K = co.matrix(K_nn)
     N = co.matrix(Nmat)
     X = co.matrix(x_na)
-    W = co.matrix(np.diag(wt_n))
+    W = co.matrix(np.diag(wt_n).copy())
     R = co.matrix(rot_coefs)
     ones = co.matrix(np.ones((n,1)))
     

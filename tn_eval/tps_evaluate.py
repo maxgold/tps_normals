@@ -71,9 +71,9 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
                 M[i,i] = P[i,i] = 0
             else:
                 p2, n2 = x_na[j,:], e_x[j,:]
-                M[i,j] = tu.deriv_U(p1,p2,n2,dim)
+                M[i,j] = tu.deriv_U(p2,p1,n2,dim)
                 if i < j:
-                    P[i,j] = P[j,i] = tu.deriv2_U(p1,p2,n1,n2,dim)
+                    P[i,j] = P[j,i] = tu.deriv2_U(p1,p2,n2,n1,dim)
     M = np.r_[M,np.zeros((1,n)),e_x.T]
     T  = np.r_[np.c_[np.eye(n+dim+1), np.zeros((n+dim+1,n))],np.c_[-M.T.dot(Linv), np.eye(n)]]
     N = P + M.T.dot(Linv).dot(M) # + 2*log(del/delta) ---> assuming all the normals are of same length
@@ -83,7 +83,7 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     Q = slg.block_diag(*[Q_single_dim]*dim)
     
     # coefficients of orthogonalized slope elements
-    w_diff = nlg.inv(Q).dot(d_diff)
+    w_diff = nlg.inv(Q).dot(d_diff) # ----> This is where the shit happens
     w_diff = w_diff.reshape((n,dim), order='F')
     # padding with 0's
     w_diff_whole = np.r_[np.zeros((n+dim+1,dim)),w_diff]
@@ -100,7 +100,7 @@ def tps_eval(x_na, y_ng, bend_coef, rot_coef, wt_n = None, nwsize=0.02, delta=0.
     return fn 
 
 
-def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None, delta=0.02, nwsize=0.02):
+def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None, delta=0.0001, nwsize=0.02):
     """
     Fits normals and points all at once.
     delta: edge length
@@ -118,23 +118,24 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     Pmat = np.zeros((n,n))
     # Get rid of these for loops at some point
     for i in range(n):
-        p1, n1 = x_na[i,:], e_x[i,:]
+        pi, ni = x_na[i,:], e_x[i,:]
         for j in range(n):
             if i == j:
                 Mmat[i,i] = Pmat[i,i] = 0
             else:
-                p2, n2 = x_na[j,:], e_x[j,:]
-                Mmat[i,j] = tu.deriv_U(p1,p2,n2,d)
+                pj, nj = x_na[j,:], e_x[j,:]
+                Mmat[i,j] = tu.deriv_U(pj,pi,nj,d)
                 if i < j:
-                    Pmat[i,j] = Pmat[j,i] = tu.deriv2_U(p1,p2,n1,n2,d)
+                    Pmat[i,j] = Pmat[j,i] = tu.deriv2_U(pi,pj,nj,ni,d)
     #Mmat = np.r_[Mmat,np.zeros((1,n)),e_x.T]
 #     import IPython
 #     IPython.embed()
     DKmat = -2*(np.diag([np.log(delta)]*n)) - Pmat
     Emat = np.r_[np.c_[K_nn, Mmat],np.c_[Mmat.T, DKmat]]
     
-    # working with the kernel of the constraints
-    _,_,VT = nlg.svd(np.r_[np.c_[x_na,np.ones((x_na.shape[0],1))], np.c_[e_x,np.zeros((e_x.shape[0],1))]].T)
+    # working with the kernel of the orthogonality constraints
+    OCmat = np.r_[np.c_[x_na,np.ones((x_na.shape[0],1))], np.c_[e_x,np.zeros((e_x.shape[0],1))]].T
+    _,_,VT = nlg.svd(OCmat)
     NSmat = VT.T[:,d+1:] # null space
     rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
 
@@ -155,16 +156,10 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     EX = co.matrix(e_x)
     EY = co.matrix(e_y)
 
-    K = co.matrix(K_nn)
     NS = co.matrix(NSmat) # working in the null space of the constraints
-    L = co.matrix(Lmat)
-    M = co.matrix(Mmat)
     KM = co.matrix(np.c_[K_nn, Mmat])
     MDK = co.matrix(np.c_[Mmat.T,DKmat])
     E = co.matrix(Emat)
-
-    import IPython
-    IPython.embed()
     
     W = co.matrix(np.diag(wt_n))
     R = co.matrix(rot_coefs)
@@ -187,7 +182,6 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     for i in range(d):
         Quad.append(cp.quad_form(A[:,i], NS.T*E*NS))
     # For rotation cost
-    
     V3 = cp.Variable(d,d)
     constraints.append(V3 == cp.sqrt(R)*B)
     
@@ -195,24 +189,24 @@ def tps_fit_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None,
     # constraints.extend([X.T*A1 +EX.T*A2== 0, ones.T*A1 == 0])
     
     # TPS objective
-    #objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4))
-    objective = cp.Minimize(cp.sum_squares(V2)  + bend_coef*sum(Quad) + cp.sum_squares(V3))
+    objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*sum(Quad) + cp.sum_squares(V3))
+    #objective = cp.Minimize(cp.sum_squares(V2)  + bend_coef*sum(Quad) + cp.sum_squares(V3))
 
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
     
-    Aval = NSmat.dot(np.array(A))
+    Aval = NSmat.dot(np.array(A.value))
     fn = registration.ThinPlateSplineNormals(d)
     fn.x_na, fn.n_na = x_na, e_x
-    fn.w_ng, f.wn_ng = Aval[0:n,:], Aval[n:,:]
-    fn.w_ng, fn.trans_g, fn.lin_ag, fn.wn_ng= np.squeeze(np.array(c.value)), np.array(B.value)
+    fn.w_ng, fn.wn_ng = Aval[0:n,:], Aval[n:,:]
+    fn.trans_g, fn.lin_ag= np.squeeze(np.array(c.value)), np.array(B.value)
     import IPython
     IPython.embed()
 
     return fn
 
 
-def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None, delta=0.02, nwsize=0.02):
+def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n=None, delta=0.0001, nwsize=0.02):
     """
     Solves as basic a problem as possible from Bookstein --> no limits taken
     Fits normals and points all at once.
@@ -222,8 +216,8 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
 
     # Generate the normals
-    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
-    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
+    e_x = tu.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=(d==3))
+    e_y = tu.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=(d==3))
     
     xs_na = x_na# - e_x*delta/2
     xf_na = x_na + e_x*delta#/2
@@ -240,7 +234,7 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     
     M1mat = np.r_[K1mat,Q1mat.T]
     M2mat = np.r_[K2mat,Q2mat.T]
-    Dmat_inv = np.diag([.0/delta]*n)
+    Dmat_inv = np.diag([1.0/delta]*n)
     
     MDmat = (M2mat - M1mat).dot(Dmat_inv)
     DKmat = Dmat_inv.dot(K11mat + K22mat - K12mat - K12mat.T).dot(Dmat_inv)
@@ -249,9 +243,18 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     LEmat = np.r_[np.c_[Lmat, MDmat], np.c_[MDmat.T, DKmat]]
 
 
+    # working with the kernel of the orthogonality constraints
+    OCmat = np.r_[np.c_[x_na,np.ones((x_na.shape[0],1))], np.zeros((d+1,d+1)), np.c_[e_x,np.zeros((e_x.shape[0],1))]].T
+    _,_,VT = nlg.svd(OCmat)
+    NSmat = VT.T[:,d+1:] # null space
+    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
+
+
     # Problem setup:
-    A = cp.Variable(2*n+d+1,d) #f.w_ng
+    A = cp.Variable(NSmat.shape[1],d) #f.w_ng
     
+    R = co.matrix(slg.block_diag(np.zeros((n+1,n+1)),rot_coefs, np.zeros((n,n))))
+    NS = co.matrix(NSmat) # working in the null space of the constraints
     Y_EY = co.matrix(np.r_[y_ng,np.zeros((d+1,d)),e_y])
     LE = co.matrix(LEmat)
     
@@ -262,26 +265,30 @@ def tps_fit_normals_exact_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n
     
     # For everything
     V1 = cp.Variable(2*n+d+1,d)
-    constraints.append(V1 == 0)#LE*A - Y_EY)
-    constraints.extend([ones.T*A == 0, X_EX.T*A == 0])
+    constraints.append(V1 == LE*NS*A - Y_EY)
     # Bend cost
-    V = cp.Variable(d,d)
-    constraints.append(V == Y_EY.T*A)#Y.T*A1+EY.T*A2)
+    Quad = [] # for quadratic forms
+    for i in range(d):
+        Quad.append(cp.quad_form(A[:,i], NS.T*LE*NS))
+#     V = cp.Variable(d,d)
+#     constraints.append(V == Y_EY.T*A)#Y.T*A1+EY.T*A2)
+    V2 = cp.Variable(2*n+d+1,d)
+    constraints.append(V2 == cp.sqrt(R)*NS*A)
     
     # TPS objective
     #objective = cp.Minimize(cp.sum_squares(V2) + normal_coef*cp.sum_squares(N2) + bend_coef*cp.sum_squares(V3) + cp.sum_squares(V4)
-    objective = cp.Minimize(cp.sum_squares(V1) + bend_coef*sum([V[i,i] for i in range(d)]))
+    objective = cp.Minimize(cp.sum_squares(LE*NS*A - Y_EY) + bend_coef*sum(Quad) + rot_coef*cp.sum_squares(cp.sqrt(R)*NS*A))
 
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
-    
-    import IPython
-    IPython.embed()
      
-    Aval = A.value
+    Aval = NSmat.dot(np.array(A.value)) 
     fn = registration.ThinPlateSplineNormals(d)
     fn.x_na, fn.n_na = x_na, e_x
     fn.w_ng, fn.trans_g, fn.lin_ag, fn.wn_ng= Aval[:n,:], Aval[n,:], Aval[n+1:n+1+d,:], Aval[n+1+d:,:]
+    
+    import IPython
+    IPython.embed()
     
 
     return fn
