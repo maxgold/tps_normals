@@ -35,8 +35,6 @@ def tps_eval(x_na, y_ng, e_x = None, e_y = None, bend_coef = 0.1, rot_coef = 1e-
     Q1 = np.c_[np.ones((n,1)),x_na]
     # normal eval matrix
     L = np.r_[np.c_[K,Q1],np.c_[Q1.T,np.zeros((dim+1,dim+1))]]
-    import IPython
-    IPython.embed()
     Linv = nlg.inv(L)
     
     # Normals
@@ -54,7 +52,10 @@ def tps_eval(x_na, y_ng, e_x = None, e_y = None, bend_coef = 0.1, rot_coef = 1e-
     d0 = np.empty((dim,0))
     for x, nm in zip(x_na,e_x):
         d0 = np.c_[d0,tu.tps_jacobian(f, x, dim).dot(nm)]
-        
+    
+    
+    import IPython
+    IPython.embed()
     d0 = d0.reshape((d0.shape[1]*dim,1))
 
     # Desired slopes

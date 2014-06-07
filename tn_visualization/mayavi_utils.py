@@ -292,7 +292,7 @@ def plot_warping(f, src, target, fine=True, draw_plinks=True):
         warped = np.c_[warped,np.zeros((warped.shape[0],1))]
     
     mlab.points3d (src[:,0], src[:,1], src[:,2], color=(1,0,0), scale_factor=0.01)
-    mlab.points3d (target[:,0], target[:,1], target[:,2], color=(0,0,1), scale_factor=0.01)
+    #mlab.points3d (target[:,0], target[:,1], target[:,2], color=(0,0,1), scale_factor=0.01)
     mlab.points3d (warped[:,0], warped[:,1], warped[:,2], color=(0,1,0), scale_factor=0.01)
 
     if draw_plinks:

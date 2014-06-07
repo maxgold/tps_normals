@@ -25,7 +25,7 @@ def nan2zero(x):
 def tps_apply_kernel(distmat, dim):
     """
     if d=2: 
-        k(r) = 4 * r^2 log(r)
+        k(r) = r^2 log(r)
        d=3:
         k(r) = -r
             
@@ -58,6 +58,10 @@ def tps_kernel_matrix2(x_na, y_ma):
     dim = x_na.shape[1]
     distmat = ssd.cdist(x_na, y_ma)
     return tps_apply_kernel(distmat, dim)
+
+def fake_normal_deriv (x,p,nm,d,delta=0.0001):
+    """ Doesn't help """
+    return (tu.tps_kernel(x, p+delta/2.0*nm, d)-tu.tps_kernel(x, p-delta/2.0*nm, d))/delta
 
 def tps_normals_deriv_mat(x_ma,x_na, n_na):
     """
@@ -313,12 +317,8 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     V2 = cp.Variable(n,d)
     constraints.append(V2 == cp.sqrt(W)*V1)
     # For bending cost
-    #Vb = []
     Q = [] # for quadratic forms
     for i in range(d):
-        #Vb.append(cp.Variable(Nmat.shape[1],1))
-        #constraints.append(Vb[-1] == A[:,i])
-        #Q.append(cp.quad_form(Vb[-1], N.T*K*N))
         Q.append(cp.quad_form(A[:,i], N.T*K*N))
     # For rotation cost
     # Element wise square root actually works here as R is diagonal and positive
@@ -329,8 +329,6 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     #constraints.extend([X.T*A == 0, ones.T*A == 0])
     
     # TPS objective
-    # import IPython
-    # IPython.embed()
     objective = cp.Minimize(cp.sum_squares(V2) + bend_coef*sum(Q) + cp.sum_squares(V3))
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)

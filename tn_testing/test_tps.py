@@ -356,50 +356,68 @@ def test_normals_new3 ():
     test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], wsize=0.15,delta=0.15)
     mlab.show()
 
-def test_normals_new4 ():
-    #pts1 = clouds.downsample(pts1, 0.02).astype('float64')
+def create_flap_points_normals(n, l, dim):
+    if dim == 3:
+        pts1 = np.r_[np.c_[np.zeros((n,1)), np.linspace(0,l,n), np.zeros((n,1))], np.c_[np.ones((n,1)), np.linspace(0,l,n), np.zeros((n,1))]]
+        pts1[-1,-1] += l/4.0
+        pts2 = pts1.copy()
+        pts2[n:,-1] += l
+        e1 = np.r_[np.tile([1.,0.,0.], (n,1)), np.tile([-1.,0.,0.], (n,1))]
+        e2 = e1.copy()
+    elif dim == 2:
+        pts1 = np.r_[np.c_[np.zeros((n,1)), np.linspace(0,l,n)], np.c_[np.ones((n,1)), np.linspace(0,l,n)]]
+        pts2 = pts1.copy()
+        pts2[n:,-1] += 2*l
+        e1 = np.r_[np.tile([1.,0.], (n,1)), np.tile([-1.,0.], (n,1))]
+        e2 = e1.copy()
     
-    pts1 = np.array([[0.,0.], [0.,0.5], [1.,0.], [1.,0.5]])
-    pts2 = np.array([[0.,0.], [0.,0.5], [1.,1.], [1.,1.5]])
-    e1 = np.array([[1.,0.], [1.,0.], [-1.,0.], [-1.,0.]])
-    e2 = np.array([[1.,0.], [1.,0.], [-1.,0.], [-1.,0.]])
-    
+    return pts1, pts2, e1, e2
 
+def test_normals_new4 (n=2,l=0.5,dim=2):
+
+    pts1, pts2, e1, e2 = create_flap_points_normals(n,l,dim)
+
+    delta = 1e-2
     f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
+    #f1 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
     #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
-    #f2 = te.tps_eval(pts1, pts2, e1, e2, bend_coef=0.0, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
-    #f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef=10, wt_n=wt_n, nwsize=0.15, delta=0.0001)
-    f2 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
-    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, nwsize=0.15, delta=0.0001)    
+    #f2 = te.tps_eval(pts1, pts2, e1, e2, bend_coef=0.0, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=1e-8)
+    #f2 = te.tps_fit_normals_cvx(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, normal_coef=10, wt_n=None, nwsize=0.15, delta=1e-6)
+    f2 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.0, rot_coef=1e-5, normal_coef=1, wt_n=None, nwsize=0.15, delta=delta)
+
     mlab.figure(1, bgcolor=(0,0,0))
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=False)
-    _,f1e2 = te.transformed_normal_direction(pts1, e1, f1, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
+    _,f1e2 = te.transformed_normal_direction(pts1, e1, f1, delta=delta)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
     test_normals_pts(np.c_[f1.transform_points(pts1),np.zeros((pts2.shape[0],1))], np.c_[f1e2,np.zeros((f1e2.shape[0],1))], wsize=0.15,delta=0.15)
     test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], np.c_[e2,np.zeros((e2.shape[0],1))], wsize=0.15,delta=0.15)
     #mlab.show()
     mlab.figure(2,bgcolor=(0,0,0))
     #mlab.clf()
     mayavi_utils.plot_warping(f2, pts1, pts2, fine=False, draw_plinks=False)
-    _,f2e2 = te.transformed_normal_direction(pts1, e1, f2, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
+    _,f2e2 = te.transformed_normal_direction(pts1, e1, f2, delta=delta)
     test_normals_pts(np.c_[f2.transform_points(pts1),np.zeros((pts2.shape[0],1))], np.c_[f2e2,np.zeros((f2e2.shape[0],1))], wsize=0.15,delta=0.15)
     test_normals_pts(np.c_[pts2,np.zeros((pts2.shape[0],1))], np.c_[e2,np.zeros((e2.shape[0],1))],  wsize=0.15,delta=0.15)
     mlab.show()
 
 
+
 def test_normals_new5 ():
     #pts1 = clouds.downsample(pts1, 0.02).astype('float64')
     
-    pts1 = np.array([[0.,0.,0.], [0.,0.5,0.], [0.,1.,0.], [1.,0.,0.25], [1.,0.5,0.25], [1.,1.,0.5]])
-    pts2 = np.array([[0.,0.,0.], [0.,0.5,0.], [0.,1.,0.], [1.,0.,1.], [1.,0.5,1.], [1.,1.,1.25]])
-    e1 = np.array([[1.,0.,0.], [1.,0.,0.], [1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.]])
-    e2 = np.array([[1.,0.,0.], [1.,0.,0.], [1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.]])
+#     pts1 = np.array([[0.,0.,0.], [0.,0.5,0.], [0.,1.,0.], [1.,0.,0.0], [1.,0.5,0.0], [1.,1.,0.25]])
+#     pts2 = np.array([[0.,0.,0.], [0.,0.5,0.], [0.,1.,0.], [1.,0.,1.], [1.,0.5,1.], [1.,1.,1.25]])
+#     e1 = np.array([[1.,0.,0.], [1.,0.,0.], [1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.]])
+#     e2 = np.array([[1.,0.,0.], [1.,0.,0.], [1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.], [-1.,0.,0.]])
     
-
+    pts1, pts2, e1, e2 = create_flap_points_normals(3.0,1,dim=3)
     f1 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
     #f2 = fit_ThinPlateSpline(pts1, pts2, bend_coef=0.1, rot_coef=1e-5, wt_n=None, use_cvx=True)
-    #f2 = te.tps_eval(pts1, pts2, e1, e2, bend_coef=0.01, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
+    f2 = te.tps_eval(pts1, pts2, e1, e2, bend_coef=0.01, rot_coef=1e-5, wt_n=None, nwsize=0.15, delta=0.0001)
     #f2 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
-    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, nwsize=0.15, delta=0.0001)    
+    #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, nwsize=0.15, delta=0.002)
+    
+    import IPython
+    IPython.embed()    
     mlab.figure(1, bgcolor=(0,0,0))
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=False)
     _,f1e2 = te.transformed_normal_direction(pts1, e1, f1, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])
@@ -424,4 +442,8 @@ if __name__=='__main__':
 #     p2 = np.array([[1, 1],[1, 0],[-0.15, -0.15],[0, 1]])
 #     print p1.shape
     # test_normals_new(pts1, pts2=None, reduce_dim=True)
-    test_normals_new4()
+    import sys
+    if len(sys.argv) >= 3:
+        test_normals_new4(n=int(sys.argv[1]), l = float(sys.argv[2]))
+    else: test_normals_new5()   
+

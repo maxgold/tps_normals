@@ -46,11 +46,12 @@ def deriv_U(x,y,dr,dim=None):
     r = (x-y)
     nr = nlg.norm(r) 
 
-    if nr == 0: return 0
     if dim==2:
+        if nr == 0: return 0
         return (2*np.log(nr)+1)*(r.T.dot(dr))
     elif dim==3:
-        return -r.T.dot(dr)
+        if nr == 0: return 0
+        return -r.T.dot(dr)/nr #-r.T.dot(dr)
     else:
         raise NotImplementedError
     
@@ -66,11 +67,12 @@ def deriv2_U(x,y,dr1,dr2,dim=None):
     r = (x-y)
     nr = nlg.norm(r)
  
-    if nr == 0: return 0
     if dim==2:
+        if nr == 0: return 0
         return 2.0/(nr**2)*(r.T.dot(dr1))*(r.T.dot(dr2)) + (2*np.log(nr)+1)*(dr1.T.dot(dr2))  
     elif dim==3:
-        return -dr1.T.dot(dr2)
+        if nr == 0: return 0
+        return (r.T.dot(dr1))*(r.T.dot(dr2))/(nr**3) - (dr1.T.dot(dr2))/nr#-dr1.T.dot(dr2)
     else:
         raise NotImplementedError
 
@@ -85,10 +87,11 @@ def tps_jacobian_single_term (pt, jpt, dim=None):
     r = (pt - jpt)
     nr = nlg.norm(r)
     
-    if nr == 0: return np.zeros_like(r)
     if dim == 3:
+        if nr == 0: return np.ones_like(r)
         return -r/nr
     elif dim == 2:
+        if nr == 0: return np.zeros_like(r)
         return r*(2*np.log(nr) + 1)
     else: raise NotImplementedError
         
