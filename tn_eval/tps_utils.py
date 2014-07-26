@@ -10,8 +10,8 @@ def tps_kernel(x,y,dim=None):
     Only dim = 2 and 3 implemented.
     """
     if dim is None:
-        dim = x.shape[0]
-    assert x.shape[0] == dim and y.shape[0] == dim 
+        dim = x.shape[1]
+    assert x.shape[1] == dim and y.shape[1] == dim 
     if dim==2:
         r = nlg.norm(x-y)
         return r**2 * np.log(r+1e-20)
@@ -51,7 +51,7 @@ def deriv_U(x,y,dr,dim=None):
         return (2*np.log(nr)+1)*(r.T.dot(dr))
     elif dim==3:
         if nr == 0: return 0
-        return -r.T.dot(dr)/nr #-r.T.dot(dr)
+        return -r.T.dot(dr) #/nr -r.T.dot(dr)
     else:
         raise NotImplementedError
     
@@ -159,3 +159,18 @@ def find_all_normals_naive (pcloud, wsize=0.02, flip_away=False, project_lower_d
         nm = find_normal_naive(pcloud,pt,wsize,flip_away)
         normals = np.r_[normals,np.atleast_2d(nm)]
     return normals
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    

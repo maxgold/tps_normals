@@ -10,6 +10,8 @@ from tn_rapprentice.registration import ThinPlateSpline, fit_ThinPlateSpline, ba
 
 from tn_eval import tps_utils
 
+from tn_eval.tps_evaluate import tps_eval
+
 def loglinspace(a,b,n):
     "n numbers between a to b (inclusive) with constant ratio between consecutive numbers"
     return np.exp(np.linspace(np.log(a),np.log(b),n))
@@ -111,7 +113,7 @@ def calculate_normal_dist2 (x_na, y_ng, nwsize=0.04):
 
 
 def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, normal_coef=0.0001, 
-                        nwsize=0.04, plotting = False, plot_cb = None):
+                        nwsize=0.04, plotting = False, plot_cb = None, pts1 = None):
     """
     tps-rpm algorithm mostly as described by chui and rangaran
     reg_init/reg_final: regularization on curvature
@@ -141,8 +143,8 @@ def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001
         invdist_nm = ssd.cdist(x_nd, ywarped_md,'euclidean')
         invdist_normals_nm = calculate_normal_dist2(x_nd, ywarped_md, nwsize)
         
-        import IPython
-        IPython.embed()
+        #import IPython
+        #IPython.embed()
         
         r = rads[i]
         prob_nm = np.exp( -(fwddist_nm + invdist_nm + normal_coef*(fwddist_normals_nm + invdist_normals_nm) / (2*r)))
@@ -163,13 +165,15 @@ def tps_rpm_bij_normals(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001
 #         g = fit_ThinPlateSpline_normals(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
         f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
         g = fit_ThinPlateSpline(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
+#         print (f.transform_points(pts1))
+        
 
     f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
     g._cost = tps.tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
     return f,g
 
 
-def fit_ThinPlateSpline_normals(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, normal_coef=1, wt_n=None,nwsize=0.02, use_cvx=False, use_dot=True):
+def fit_ThinPlateSpline_normals(x_na, y_ng, e_x = None, e_y = None, bend_coef=.1, rot_coef = 1e-5, normal_coef=1, wt_n=None,nwsize=0.02, use_cvx=False, use_dot=True):
     """
     x_na: source cloud
     y_nd: target cloud
@@ -179,22 +183,24 @@ def fit_ThinPlateSpline_normals(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, norma
     """
     f = ThinPlateSpline()
     if use_cvx:
-        f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, use_dot=use_dot)
+        f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals_cvx(x_na, y_ng, e_x, e_y, bend_coef, rot_coef, normal_coef, wt_n, use_dot=use_dot)
     else:
-        f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n)
+        f.lin_ag, f.trans_g, f.w_ng = tps_fit3_normals(x_na, y_ng, e_x, e_y, bend_coef, rot_coef, normal_coef, wt_n)
     f.x_na = x_na
     return f
 
 
-def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nwsize=0.02):
+def tps_fit3_normals(x_na, y_ng, e_x = None, e_y = None, bend_coef = .1, rot_coef = 1e-5, normal_coef = .01, wt_n = None, nwsize=0.02):
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
 
     
     K_nn = tps.tps_kernel_matrix(x_na)
     # Generate the normals
-    e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
-    e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
+    if e_x is None:
+        e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
+    if e_y is None:
+        e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
     
     # Calculate the relevant matrices for Jacobians
     if d == 3:
@@ -231,16 +237,20 @@ def tps_fit3_normals(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nwsize=
     return Theta[1:d+1], Theta[0], Theta[d+1:]
 
 
-def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nwsize=0.02, use_dot=False):
+def tps_fit3_normals_cvx(x_na, y_ng, e_x = None, e_y = None, bend_coef = .1, rot_coef = 1e-5, normal_coef = .01, wt_n = None, nwsize=0.02, use_dot=False):
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
+    
     K_nn = tps.tps_kernel_matrix(x_na)
     _,_,VT = nlg.svd(np.c_[x_na,np.ones((x_na.shape[0],1))].T)
     Nmat = VT.T[:,d+1:]
     rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)    
+    
     # Generate the normals
-    e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
-    e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
+    if e_x is None:
+        e_x = tps_utils.find_all_normals_naive(x_na, nwsize, flip_away=True, project_lower_dim=True)
+    if e_y is None:
+        e_y = tps_utils.find_all_normals_naive(y_ng, nwsize, flip_away=True, project_lower_dim=True)
     if d == 3:
         x_diff = np.transpose(x_na[None,:,:] - x_na[:,None,:],(0,2,1))
         Pmat = e_x.dot(x_diff)[range(n),range(n),:]/(K_nn+1e-20)
@@ -313,4 +323,138 @@ def tps_fit3_normals_cvx(x_na, y_ng, bend_coef, rot_coef, normal_coef, wt_n, nws
 #     import IPython
 #     IPython.embed()
     
-    return np.array(B.value), np.squeeze(np.array(c.value)) , np.array(A.value)
+    return np.array(B.value), np.squeeze(np.array(c.value)) , np.array(A.valuefi)
+
+def tps_rpm_bij_normals_max(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, normal_coef=0.0001, 
+                        nwsize=.15, plotting = False, plot_cb = None):
+    """
+    tps-rpm algorithm mostly as described by chui and rangaran
+    reg_init/reg_final: regularization on curvature
+    rad_init/rad_final: radius for correspondence calculation (meters)
+    plotting: 0 means don't plot. integer n means plot every n iterations
+    """
+    
+    _,d=x_nd.shape
+    regs = loglinspace(reg_init, reg_final, n_iter)
+    rads = loglinspace(rad_init, rad_final, n_iter)
+
+    f = ThinPlateSpline(d)
+    f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
+    
+    g = ThinPlateSpline(d)
+    g.trans_g = -f.trans_g
+
+
+    # r_N = None
+    
+    for i in xrange(n_iter):
+        xwarped_nd = f.transform_points(x_nd)
+        ywarped_md = g.transform_points(y_md)
+        
+        fwddist_nm = ssd.cdist(xwarped_nd, y_md,'euclidean')
+        
+        invdist_nm = ssd.cdist(x_nd, ywarped_md,'euclidean')
+        
+        
+        
+        
+        r = rads[i]
+        prob_nm = np.exp( -(fwddist_nm + invdist_nm  / (2*r)))
+        corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, 1e-1, 2e-1)
+        corr_nm += 1e-9
+        
+        wt_n = corr_nm.sum(axis=1)
+        wt_m = corr_nm.sum(axis=0)
+
+        wt_n = np.array(wt_n, dtype='float')
+        wt_m = np.array(wt_m, dtype='float')
+
+
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        ytarg_md = (corr_nm/wt_m[None,:]).T.dot(x_nd)
+
+        e_x = tps_utils.find_all_normals_naive(x_nd, nwsize, flip_away = True, project_lower_dim=(d==3))
+        e_y = tps_utils.find_all_normals_naive(y_md, nwsize, flip_away = True, project_lower_dim=(d==3))
+        e_xt = tps_utils.find_all_normals_naive(xtarg_nd, nwsize, flip_away = True, project_lower_dim=(d==3))
+        e_yt = tps_utils.find_all_normals_naive(ytarg_md, nwsize, flip_away = True, project_lower_dim=(d==3))
+        
+        # if plotting and i%plotting==0 and plot_cb is not None:
+        #    plot_cb(x_nd, y_md, xtarg_nd, corr_nm, wt_n, f)
+        
+#         f = fit_ThinPlateSpline_normals(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
+#         g = fit_ThinPlateSpline_normals(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
+        f = tps_eval(x_nd, xtarg_nd, e_x, e_xt, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
+        g = tps_eval(y_md, ytarg_md, e_y, e_yt, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
+
+#    f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
+#f    g._cost = tps.tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
+    return f,g
+
+
+
+
+def tps_rpm_bij_normals_max2(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, normal_coef=0.0001, 
+                        nwsize=.15, plotting = False, plot_cb = None):
+    """
+    tps-rpm algorithm mostly as described by chui and rangaran
+    reg_init/reg_final: regularization on curvature
+    rad_init/rad_final: radius for correspondence calculation (meters)
+    plotting: 0 means don't plot. integer n means plot every n iterations
+    """
+    
+    _,d=x_nd.shape
+    regs = loglinspace(reg_init, reg_final, n_iter)
+    rads = loglinspace(rad_init, rad_final, n_iter)
+
+    f = ThinPlateSpline(d)
+    f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
+    
+    g = ThinPlateSpline(d)
+    g.trans_g = -f.trans_g
+
+
+    # r_N = None
+    for i in xrange(n_iter):
+        xwarped_nd = f.transform_points(x_nd)
+        ywarped_md = g.transform_points(y_md)
+        
+        fwddist_nm = ssd.cdist(xwarped_nd, y_md,'euclidean')
+        
+        invdist_nm = ssd.cdist(x_nd, ywarped_md,'euclidean')
+        
+        r = rads[i]
+        prob_nm = np.exp( -(fwddist_nm + invdist_nm  / (2*r)))
+        corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, 1e-1, 2e-1)
+        corr_nm += 1e-9
+        
+        wt_n = corr_nm.sum(axis=1)
+        wt_m = corr_nm.sum(axis=0)
+
+        wt_n = np.array(wt_n, dtype='float')
+        wt_m = np.array(wt_m, dtype='float')
+
+
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        ytarg_md = (corr_nm/wt_m[None,:]).T.dot(x_nd)
+
+        
+        # if plotting and i%plotting==0 and plot_cb is not None:
+        #    plot_cb(x_nd, y_md, xtarg_nd, corr_nm, wt_n, f)
+        
+#         f = fit_ThinPlateSpline_normals(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
+#         g = fit_ThinPlateSpline_normals(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg, normal_coef=normal_coef, nwsize = nwsize)
+        f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
+        g = fit_ThinPlateSpline(y_md, ytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg)#, normal_coef=normal_coef, nwsize = nwsize)
+
+    e_x = tps_utils.find_all_normals_naive(x_nd, nwsize, flip_away = True, project_lower_dim=(d==3))
+    e_y = tps_utils.find_all_normals_naive(y_md, nwsize, flip_away = True, project_lower_dim=(d==3))
+    e_xt = tps_utils.find_all_normals_naive(xtarg_nd, nwsize, flip_away = True, project_lower_dim=(d==3))
+    e_yt = tps_utils.find_all_normals_naive(ytarg_md, nwsize, flip_away = True, project_lower_dim=(d==3))
+
+    f = tps_eval(x_nd, xtarg_nd, e_x, e_xt, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg)
+    g = tps_eval(y_md, ytarg_md, e_y, e_yt, bend_coef = regs[i], wt_n=wt_m, rot_coef = rot_reg)
+
+#    f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
+#    g._cost = tps.tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
+    return f,g
+

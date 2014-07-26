@@ -416,8 +416,8 @@ def test_normals_new5 ():
     #f2 = te.tps_fit_normals_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef=0.1, wt_n=None, nwsize=0.15, delta=0.0001)
     #f2 = te.tps_fit_normals_exact_cvx(pts1, pts2, e1, e2, bend_coef=0.1, rot_coef=1e-5, normal_coef = 0.1, wt_n=None, nwsize=0.15, delta=0.002)
     
-    import IPython
-    IPython.embed()    
+    # import IPython
+    # IPython.embed()    
     mlab.figure(1, bgcolor=(0,0,0))
     mayavi_utils.plot_warping(f1, pts1, pts2, fine=False, draw_plinks=False)
     _,f1e2 = te.transformed_normal_direction(pts1, e1, f1, delta=0.0001)#np.asarray([tu.tps_jacobian(f2, pt, 2).dot(nm) for pt,nm in zip(pts1,e1)])

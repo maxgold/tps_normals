@@ -16,10 +16,12 @@ index name conventions:
 from __future__ import division
 import numpy as np
 import scipy.spatial.distance as ssd
+from rapprentice import tps, svds, math_utils
+from tn_rapprentice import krig
+from tn_eval import krig_utils
+import tn_eval.tps_utils as tu
 
-from tn_utils import math_utils
-
-from tn_rapprentice import tps, svds 
+# from svds import svds
 
 
 
@@ -65,20 +67,46 @@ class Transformation(object):
     def compute_numerical_jacobian(self, x_d, epsilon=0.0001):
         "numerical jacobian"
         x0 = np.asfarray(x_d)
-        f0 = np.squeeze(self.transform_points(np.atleast_2d(x0)))
-        jac = np.zeros((len(x0), len(f0)))
+        f0 = self.transform_points(x0)
+        jac = np.zeros(len(x0), len(f0))
         dx = np.zeros(len(x0))
         for i in range(len(x0)):
             dx[i] = epsilon
-            jac[i,:] = (self.transform_points(np.atleast_2d(x0+dx)) - f0) / epsilon
+            jac[i] = (self.transform_points(x0+dx) - f0) / epsilon
             dx[i] = 0.
         return jac.transpose()
+
+class KrigingSpline1(Transformation):
+    def __init__(self, d=3, alpha = 1.5):
+        self.alpha = alpha
+        self.Xs = np.zeros((0,d))
+        self.Epts = np.zeros((0,d))
+        self.Exs = np.zeros((0,d))
+        self.lin_ag = np.r_[np.zeros((1,d)), np.eye(d)]
+        self.w_ng = np.zeros((0,d))
+    def transform_points(self, Ys):
+        y = krig.krig_eval(self.alpha, self.Xs, self.Epts, self.Exs, Ys, self.w_ng, self.lin_ag)
+        return y
+    def transform_normals(self, Eypts, Eys):
+        y = krig.transform_normals1(self.alpha, self.Xs, self.Epts, self.Exs, Eypts, Eys,  self.w_ng, self.lin_ag)
+        return y
+
+
+class KrigingSplineLandmark(Transformation):
+    def __init__(self, d=3, alpha = 1.5):
+        self.alpha = alpha
+        self.Xs = np.zeros((0,d))
+        self.lin_ag = np.r_[np.zeros((1,d)), np.eye(d)]
+        self.w_ng = np.zeros((0,d))
+    def transform_points(self, Ys):
+        Ys = krig.krig_eval_landmark(self.alpha, self.Xs, Ys, self.w_ng, self.lin_ag)
+        return Ys
 
 class ThinPlateSpline(Transformation):
     """
     members:
         x_na: centers of basis functions
-        w_ng: weights of kernel functions
+        w_ng: 
         lin_ag: transpose of linear part, so you take x_na.dot(lin_ag)
         trans_g: translation part
     
@@ -95,34 +123,6 @@ class ThinPlateSpline(Transformation):
         return y_ng
     def compute_jacobian(self, x_ma):
         grad_mga = tps.tps_grad(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na)
-        return grad_mga
-    
-class ThinPlateSplineNormals(Transformation):
-    """
-    members:
-        x_na: centers of basis functions
-        n_na: normals at basis function centers
-        w_ng: weights of kernel functions 
-        wn_ng: weights of kernel functions for slope elements at normals 
-        lin_ag: transpose of linear part, so you take x_na.dot(lin_ag)
-        trans_g: translation part
-    
-    """
-    def __init__(self, d=3):
-        "initialize as identity"
-        self.x_na = np.zeros((0,d))
-        self.n_na = np.zeros((0,d))
-        self.lin_ag = np.eye(d)
-        self.trans_g = np.zeros(d)
-        self.w_ng = np.zeros((0,d))
-        self.wn_ng = np.zeros((0,d))
-
-    def transform_points(self, x_ma):
-        y_ng = tps.tps_eval_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.wn_ng, self.x_na, self.n_na)
-        return y_ng
-
-    def compute_jacobian(self, x_ma):
-        grad_mga = tps.tps_grad_normals(x_ma, self.lin_ag, self.trans_g, self.w_ng, self.x_na, self.n_na)
         return grad_mga
         
 class Affine(Transformation):
@@ -152,7 +152,7 @@ class Composition(Transformation):
             totalgrad = (grad[:,:,:,None] * totalgrad[:,None,:,:]).sum(axis=-2)
         return totalgrad
 
-def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None, use_cvx = False):
+def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None):
     """
     x_na: source cloud
     y_nd: target cloud
@@ -160,12 +160,59 @@ def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None, us
     angular_spring: penalize rotation
     wt_n: weight the points        
     """
-    f = ThinPlateSpline()
-    if use_cvx:
-        f.lin_ag, f.trans_g, f.w_ng = tps.tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n)
-    else:
-        f.lin_ag, f.trans_g, f.w_ng = tps.tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n)
+    d = x_na.shape[1]
+    f = ThinPlateSpline(d)
+    f.lin_ag, f.trans_g, f.w_ng = tps.tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n)
     f.x_na = x_na
+    return f        
+
+def fit_KrigingSplineWeird(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, alpha = 1.5, normal_coef = 1, wt_n=None):
+    """
+    Xs: landmark source cloud
+    Epts: normal point source cloud
+    Exs: normal values
+    y_ng: landmark target cloud
+    ey_ng: target normal point cloud
+    Eys: target normal values
+    wt_n: weight the points
+    """
+    d = Xs.shape[1]
+    f = KrigingSpline1(d, alpha)
+    f.w_ng, f.lin_ag = krig_utils.krig_fit1Weird(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef, normal_coef, wt_n = None)
+    f.Xs, f.Epts, f.Exs = Xs, Epts, Exs
+    return f
+
+def fit_KrigingSplineNormal(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, alpha = 1.5, normal_coef = 1, wt_n=None):
+    """
+    Xs: landmark source cloud
+    Epts: normal point source cloud
+    Exs: normal values
+    y_ng: landmark target cloud
+    ey_ng: target normal point cloud
+    Eys: target normal values
+    wt_n: weight the points
+    """
+    d = Xs.shape[1]
+    f = KrigingSpline1(d, alpha)
+    f.w_ng, f.lin_ag = krig_utils.krig_fit1Normal(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef, normal_coef, wt_n = None)
+    f.Xs, f.Epts, f.Exs = Xs, Epts, Exs
+    return f
+
+
+def fit_KrigingSplineLandmark(Xs, Ys, bend_coef = 1e-6, alpha = 1.5, wt_n=None):
+    """
+    Xs: landmark source cloud
+    Epts: normal point source cloud
+    Exs: normal values
+    y_ng: landmark target cloud
+    ey_ng: target normal point cloud
+    Eys: target normal values
+    wt_n: weight the points
+    """
+    d = Xs.shape[1]
+    f = KrigingSplineLandmark(d, alpha)
+    f.w_ng, f.lin_ag = krig_utils.krig_fit3_landmark(f.alpha, Xs, Ys, bend_coef,  wt_n = None)
+    f.Xs = Xs
     return f
 
 def fit_ThinPlateSpline_RotReg(x_na, y_ng, bend_coef = .1, rot_coefs = (0.01,0.01,0.0025),scale_coef=.01):
@@ -245,7 +292,7 @@ def tps_rpm(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init =
 
     for i in xrange(n_iter):
         xwarped_nd = f.transform_points(x_nd)
-        corr_nm = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
+        corr_nm, r_n, _ = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
 
         wt_n = corr_nm.sum(axis=1)
 
@@ -261,7 +308,7 @@ def tps_rpm(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init =
     return f
 
 def tps_rpm_bij(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, 
-                plotting = False, plot_cb = None):
+            plotting = False, plot_cb = None):
     """
     tps-rpm algorithm mostly as described by chui and rangaran
     reg_init/reg_final: regularization on curvature
@@ -301,7 +348,7 @@ def tps_rpm_bij(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_in
         xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
         ytarg_md = (corr_nm/wt_m[None,:]).T.dot(x_nd)
         
-        if plotting and i%plotting==0 and plot_cb is not None:
+        if plotting and i%plotting==0:
             plot_cb(x_nd, y_md, xtarg_nd, corr_nm, wt_n, f)
         
         f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coef = rot_reg)
@@ -310,6 +357,78 @@ def tps_rpm_bij(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_in
     f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
     g._cost = tps.tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
     return f,g
+
+
+def tps_rpm_normals_naive(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, normal_weight = 1, alpha = 1.5):
+
+     _,d=x_nd.shape
+    regs = loglinspace(reg_init, reg_final, n_iter)
+    rads = loglinspace(rad_init, rad_final, n_iter)
+    
+    f = fit_KrigingSplineNormal(x_nd, x_nd, exs, x_nd, exs)
+
+    for i in xrange(n_iter):
+        xwarped_nd = f.transform_points(x_nd)
+        corr_nm, r_n, _ = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
+
+        wt_n = corr_nm.sum(axis=1)
+
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        etarg_ys = (corr_nm/wt_n[:,None]).dot(eys) #have to normalize this
+
+        f = fit_KrigingSplineNormal(x_nd, x_nd, exs, xtarg_nd, etarg_ys, bend_coef = regs[i], wt_n=wt_n)
+
+    return f
+
+
+
+def tps_rpm_normals(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, normal_weight = 1, alpha = 1.5):
+    #the problem is that some entries become outliers 
+
+    _,d=x_nd.shape
+    regs = loglinspace(reg_init, reg_final, n_iter)
+    rads = loglinspace(rad_init, rad_final, n_iter)
+    norms = loglinspace(1, .1, n_iter)
+    points = loglinspace(.1, 1, n_iter)
+
+    f = fit_KrigingSplineNormal(x_nd, x_nd, exs, x_nd, exs)
+
+    for i in xrange(n_iter):
+        xwarped_nd = f.transform_points(x_nd)
+        ewarped_xs = f.transform_normals(x_nd, exs)
+
+        fwddist_nm = ssd.cdist(xwarped_nd, y_md,'euclidean')
+        r = rads[i]
+
+        distmat = ssd.cdist(xwarped_nd,y_md, 'euclidean')
+        distmat_n = ssd.cdist(ewarped_xs, eys, 'euclidean')
+        dist_nm = points[i]*distmat + norms[i]*distmat_n
+
+        prob_nm = np.exp(-dist_nm/r)
+
+        corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, 1e-1, 2e-1)
+        corr_nm += 1e-9
+
+        wt_n = corr_nm.sum(axis=1)
+
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        etarg_ys = (corr_nm/wt_n[:,None]).dot(eys) #have to normalize this
+
+        f = fit_KrigingSplineNormal(x_nd, x_nd, exs, xtarg_nd, etarg_ys, bend_coef = regs[i], wt_n=wt_n)
+    return f
+
+
+
+for i in xrange(n_iter):
+    xwarped_nd = f.transform_points(x_nd)
+    corr_nm, r_n, _ = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
+
+    wt_n = corr_nm.sum(axis=1)
+
+
+    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        
+    f = fit_KrigingSplineNormal(x_nd, x_nd, exs, targ_nd, bend_coef = regs[i], wt_n=wt_n, normal_coef = 0)
 
 
 def tps_reg_cost(f):
@@ -365,6 +484,7 @@ def balance_matrix(prob_nm, p, max_iter=20, ratio_err_tol=1e-3):
 
     return prob_nm
 
+
 def calc_correspondence_matrix(x_nd, y_md, r, p, max_iter=20):
     dist_nm = ssd.cdist(x_nd, y_md,'euclidean')
     
@@ -374,6 +494,16 @@ def calc_correspondence_matrix(x_nd, y_md, r, p, max_iter=20):
     # return balance_matrix(prob_nm, p=p, max_iter = max_iter, ratio_err_tol = ratio_err_tol)
     outlierfrac = 1e-1
     return balance_matrix3(prob_nm, max_iter, p, outlierfrac)
+
+def calc_correspondence_matrix_normals(f, Xs, Ys, Eys, p, outlierfrac):
+    distmat = ssd.cdist(Xs,Ys)
+    distmat_n = ssd.cdist(f.transform_normals(Xs), Eys)
+    dist_nm = distmat + distmat_n
+
+    prob_nm = np.exp(-dist_nm/r)
+
+    outlierfrac = .1
+    return banlance_matrix3(prob_nm, max_iter, p, outlierfrac)
 
 
 def nan2zero(x):

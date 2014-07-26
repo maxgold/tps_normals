@@ -13,6 +13,7 @@ import cvxopt as co, cvxpy as cp
 from tn_utils.colorize import colorize
 from tn_eval import tps_utils as tu
 
+
 VERBOSE = False
 ENABLE_SLOW_TESTS = False
 
@@ -260,7 +261,7 @@ def solve_eqp1(H, f, A):
     
     return x
     
-def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n):
+def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n = None):
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
 
@@ -332,6 +333,9 @@ def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
     objective = cp.Minimize(cp.sum_squares(V2) + bend_coef*sum(Q) + cp.sum_squares(V3))
     p = cp.Problem(objective, constraints)
     p.solve(verbose=True)
+
+
+
     
     return np.array(B.value), np.squeeze(np.array(c.value)) , Nmat.dot(np.array(A.value))
     
@@ -622,6 +626,8 @@ def tps_fit_regrot(x_na, y_ng, bend_coef, rfunc, wt_n=None, max_iter = 1, inner_
         trans_g, w_ng = tps_fit_fixedrot(x_na, y_ng, bend_coef, lin_ag, K_nn, wt_n)
     #trans_g = y_ng.mean(axis=0) - tps_eval(x_na, lin_ag, np.zeros(3), w_ng, x_na).mean(axis=0)
     if VERBOSE: print "rotation result", lin_ag
+
+
     return lin_ag, trans_g, w_ng
 
 #def tps_fit_regrot2(x_na, y_ng, bend_coef, rfunc, wt_n=None, max_iter = 20):
@@ -653,3 +659,88 @@ def tps_cost_regrot(lin_ag, trans_g, w_ng, x_na, y_ng, bend_coef, rfunc, K_nn = 
     """
     if wt_n is not None: raise NotImplementedError
     return tps_cost(lin_ag, trans_g, w_ng, x_na, y_ng, bend_coef, K_nn) + rfunc(lin_ag)
+
+
+
+
+
+
+def tps_fit3_cvx_test(x_na, y_ng, bend_coef, rot_coef, wt_n):
+    """
+    Use cvx instead of just matrix multiply.
+    Working with null space of matrices.
+    """
+
+    if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
+    n,d = x_na.shape
+    K_nn = tps_kernel_matrix(x_na)
+    _,_,VT = nlg.svd(np.c_[x_na,np.ones((x_na.shape[0],1))].T)
+    Nmat = VT.T[:,d+1:]
+    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
+    
+    
+    A = cp.Variable(Nmat.shape[1],d)
+    B = cp.Variable(d,d)
+    c = cp.Variable(d,1)
+    
+    Y = co.matrix(y_ng)
+    K = co.matrix(K_nn)
+    N = co.matrix(Nmat)
+    X = co.matrix(x_na)
+    W = co.matrix(np.diag(wt_n).copy())
+    R = co.matrix(rot_coefs)
+    ones = co.matrix(np.ones((n,1)))
+    
+    constraints = []
+    
+    # For correspondences
+    V1 = cp.Variable(n,d)
+    constraints.append(V1 == Y-K*N*A-X*B - ones*c.T)
+    V2 = cp.Variable(n,d)
+    constraints.append(V2 == cp.sqrt(W)*V1)
+    # For bending cost
+    Q = [] # for quadratic forms
+    for i in range(d):
+        Q.append(cp.quad_form(A[:,i], N.T*K*N))
+    # For rotation cost
+    # Element wise square root actually works here as R is diagonal and positive
+    V3 = cp.Variable(d,d)
+    constraints.append(V3 == cp.sqrt(R)*B)
+    
+    # Orthogonality constraints for bending are taken care of already because working with the null space
+    #constraints.extend([X.T*A == 0, ones.T*A == 0])
+    
+    # TPS objective
+    objective = cp.Minimize(cp.sum_squares(V2) + bend_coef*sum(Q) + cp.sum_squares(V3))
+    p = cp.Problem(objective, constraints)
+    p.solve(verbose=True)
+    
+    return np.array(B.value), np.squeeze(np.array(c.value)) , Nmat.dot(np.array(A.value))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
