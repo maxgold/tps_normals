@@ -446,34 +446,6 @@ def krig_objective(Xs, Ys, Epts, Exs, Eys, bend_coef, alpha = 1.5, normal_coef =
 
 	return point_cost + bend_cost
 
-def krig_objective_alt(Xs, Ys, Epts, Exs, Eys, bend_coef, alpha = 1.5, normal_coef = 1):
-	n,dim = Xs.shape
-	m,_ = Exs.shape
-
-	Y = np.r_[Ys, Eys]
-
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear(Xs, Epts, Exs)
-	B = bending_energynormal(S, D, dim)
-
-	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
-	WQ = Q
-	H = Q.T.dot(WQ)
-	#H[:n+m, :n+m] += bend_coef*B
-	H[:n+m, :n+m] += bend_coef*B
-	f = -WQ.T.dot(Y)
-
-	A = np.c_[D.T, np.zeros((dim+1, dim+1))]
-	n_cnts = A.shape[0]
-
-	_u,_s,_vh = np.linalg.svd(A.T)
-    N = _u[:,n_cnts:]
-
-    Theta = -N.dot(nlg.inv(N.T.dot(H).dot(N))).dot(N.T).dot(f)
-
-    return np.trace(Theta.T.dot(H).dot(Theta)) + np.sum(f.T.dot(Theta))
-
 
 def plot_krig_objective(bend_coefs):
 	cost = []

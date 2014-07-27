@@ -7,8 +7,6 @@ import numpy as np, numpy.linalg as nlg
 import scipy.spatial.distance as ssd
 import scipy.optimize as opt
 
-import cvxopt as co, cvxpy as cp
-
 
 from tn_utils.colorize import colorize
 from tn_eval import tps_utils as tu

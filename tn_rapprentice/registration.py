@@ -76,19 +76,19 @@ class Transformation(object):
             dx[i] = 0.
         return jac.transpose()
 
-class KrigingSpline1(Transformation):
+class KrigingSpline(Transformation):
     def __init__(self, d=3, alpha = 1.5):
         self.alpha = alpha
-        self.Xs = np.zeros((0,d))
-        self.Epts = np.zeros((0,d))
-        self.Exs = np.zeros((0,d))
+        self.x_na = np.zeros((0,d))
+        self.ex_na = np.zeros((0,d))
+        self.exs = np.zeros((0,d))
         self.lin_ag = np.r_[np.zeros((1,d)), np.eye(d)]
         self.w_ng = np.zeros((0,d))
-    def transform_points(self, Ys):
-        y = krig.krig_eval(self.alpha, self.Xs, self.Epts, self.Exs, Ys, self.w_ng, self.lin_ag)
+    def transform_points(self, y_ng):
+        y = krig.krig_eval(self.alpha, self.x_na, self.ex_na, self.exs, y_ng, self.w_ng, self.lin_ag)
         return y
     def transform_normals(self, Eypts, Eys):
-        y = krig.transform_normals1(self.alpha, self.Xs, self.Epts, self.Exs, Eypts, Eys,  self.w_ng, self.lin_ag)
+        y = krig.transform_normals1(self.alpha, self.x_na, self.ex_na, self.exs, Eypts, Eys,  self.w_ng, self.lin_ag)
         return y
 
 
@@ -182,7 +182,7 @@ def fit_KrigingSplineWeird(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, alpha = 1.5
     f.Xs, f.Epts, f.Exs = Xs, Epts, Exs
     return f
 
-def fit_KrigingSplineNormal(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, alpha = 1.5, normal_coef = 1, wt_n=None):
+def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, alpha = 1.5, normal_coef = 1, wt_n=None):
     """
     Xs: landmark source cloud
     Epts: normal point source cloud
@@ -193,7 +193,7 @@ def fit_KrigingSplineNormal(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, alpha = 1.
     wt_n: weight the points
     """
     d = Xs.shape[1]
-    f = KrigingSpline1(d, alpha)
+    f = KrigingSpline(d, alpha)
     f.w_ng, f.lin_ag = krig_utils.krig_fit1Normal(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef, normal_coef, wt_n = None)
     f.Xs, f.Epts, f.Exs = Xs, Epts, Exs
     return f
@@ -361,7 +361,7 @@ def tps_rpm_bij(x_nd, y_md, n_iter = 20, reg_init = .1, reg_final = .001, rad_in
 
 def tps_rpm_normals_naive(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, normal_weight = 1, alpha = 1.5):
 
-     _,d=x_nd.shape
+    _,d=x_nd.shape
     regs = loglinspace(reg_init, reg_final, n_iter)
     rads = loglinspace(rad_init, rad_final, n_iter)
     
@@ -417,18 +417,6 @@ def tps_rpm_normals(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final 
         f = fit_KrigingSplineNormal(x_nd, x_nd, exs, xtarg_nd, etarg_ys, bend_coef = regs[i], wt_n=wt_n)
     return f
 
-
-
-for i in xrange(n_iter):
-    xwarped_nd = f.transform_points(x_nd)
-    corr_nm, r_n, _ = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
-
-    wt_n = corr_nm.sum(axis=1)
-
-
-    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-        
-    f = fit_KrigingSplineNormal(x_nd, x_nd, exs, targ_nd, bend_coef = regs[i], wt_n=wt_n, normal_coef = 0)
 
 
 def tps_reg_cost(f):
