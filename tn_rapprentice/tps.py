@@ -12,6 +12,8 @@ from tn_utils.colorize import colorize
 from tn_eval import tps_utils as tu
 
 
+
+
 VERBOSE = False
 ENABLE_SLOW_TESTS = False
 
@@ -102,6 +104,75 @@ def tps_grad(x_ma, lin_ag, _trans_g, w_ng, x_na):
         grad_mga[:,:,a] = lin_ga[None,:,a] - np.dot(nan2zero(diffa_mn/dist_mn),w_ng)
     return grad_mga
 
+def krig_grad(Ys, Epts, E1s, lin_ag, trans_g, w_ng, Xs):
+    Eypts = Ys
+    alpha = 1.5
+
+    n, d = Xs.shape
+    m, _ = Epts.shape
+    s, _ = Ys.shape
+    j, _ = Eypts.shape
+    Y = np.tile(Ys, (1,m)).reshape(s,m,1,d)
+    EX = np.tile(Epts, (s, 1)).reshape(s, m, 1, d)
+    YEdiff = Y-EX # [[[y_1 - e_1], ..., [y_1 - e_m]], ..., [[y_n - e_1], ..., [y_n - e_m]]]
+
+    EY = np.tile(Eypts, (1,n)).reshape(j,n,1,d)
+    X = np.tile(Xs, (j, 1)).reshape(j, n, 1, d)
+    EYdiff = EY-X # [[[ey_1 - x_1], ..., [ey_1 - x_n]], ..., [[ey_m - x_1], ..., [ey_m - x_m]]]
+    
+    E_xs = np.tile(Eypts, (1,m)).reshape(j, m, 1, d) 
+    E_ys = np.tile(Epts, (j,1)).reshape(j, m, 1, d)
+    Ediff = E_xs - E_ys #[[ey1-e1], ..., [ey_1 - e_m], ..., [ey_m-e_1], ..., [ey_m - e_m]]
+    
+    Exs = np.array([E1s[:, 0]]) #x components of E1s
+    Eys = np.array([E1s[:, 1]]) #y components of E1s
+    
+    nYE = np.sum(np.abs(YEdiff)**2,axis=-1).reshape(s,m) # squared norm of each element y_i-e_j of Y-EX
+    nEY = np.sum(np.abs(EYdiff)**2,axis=-1).reshape(j,n) # squared norm of each element ey_i-x_j of Y-EX #checked
+    
+    dist_mat = ssd.cdist(Ys, Xs)**2 #squared norm between Xs and Ys
+    E_dist_mat = ssd.cdist(Eypts, Epts)**2  #squared norm between Epts 
+
+    yedist_x = YEdiff[0:, 0:, 0, 0] # difference in x coordinates of y_i and e_j i.e. x_i_x - e_j_x
+    Edist_x = Ediff[0:, 0:, 0, 0] # difference in x coordinates of ey_i and e_j i.e. ey_i_x - e_j_x
+    eydist_x = EYdiff[0:, 0:, 0, 0] # difference in x coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
+    yedist_y = YEdiff[0:, 0:, 0, 1] # difference in y coordinates of y_i and e_j i.e. x_i_x - e_j_x
+    Edist_y = Ediff[0:, 0:, 0, 1] # difference in y coordinates of ey_i and e_j i.e. ey_i_x - e_j_x
+    eydist_y = EYdiff[0:, 0:, 0, 1] # difference in y coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
+    yedist_z = YEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
+    Edist_z = Ediff[0:, 0:, 0, 2] # difference in z coordinates of e_i and e_j i.e. e_i_x - e_j_x
+    Ezs = np.array([E1s[:, 2]]) #z components of E1s
+    eydist_z = EYdiff[0:, 0:, 0, 2]## 
+
+    nEYsqrt = np.sqrt(nEY)
+    S_10x  = eydist_x*nEYsqrt#dsigma/dx.T
+    S_10y  = eydist_y*nEYsqrt#dsigma/dy.T
+    S_10z  = eydist_z*nEYsqrt#
+
+    Esqrt = np.sqrt(E_dist_mat)
+    S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy
+    S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
+    S_11zz = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_z)/Esqrt) #dsigma/dzdz
+    S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
+    S_11yz = nan2zero(Edist_y*Edist_z/Esqrt) #dsigma/dydz
+    S_11xz = nan2zero(Edist_x*Edist_z/Esqrt) #d
+
+    assert Ys.shape[1] == 3
+
+    grad_mga = np.empty((s,d,d))
+
+    lin_ga = lin_ag.T
+
+    grad_mga[:,:,0] = lin_ga[None,:,0]  + np.dot(np.c_[S_10x, Exs*S_11xx + Eys*S_11xy + Ezs*S_11xz], w_ng)
+    grad_mga[:,:,1] = lin_ga[None,:,1]  + np.dot(np.c_[S_10y, Eys*S_11yy + Exs*S_11xy + Ezs*S_11yz], w_ng)
+    grad_mga[:,:,2] = lin_ga[None,:,2]  + np.dot(np.c_[S_10z, Ezs*S_11zz + Eys*S_11yz + Exs*S_11xz], w_ng)
+    
+
+    return grad_mga
+    
+
+    
+
 def tps_grad_normals(x_ma, lin_ag, _trans_g, w_ng, x_na, n_na):
     raise NotImplementedError
     
@@ -163,6 +234,19 @@ def tps_cost(lin_ag, trans_g, w_ng, x_na, y_ng, bend_coef, K_nn=None, return_tup
     ypred_ng = np.dot(K_nn, w_ng) + np.dot(x_na, lin_ag) + trans_g[None,:]
     res_cost = (wt_n[:,None] * (ypred_ng - y_ng)**2).sum()
     bend_cost = bend_coef * sum(np.dot(w_ng[:,g], np.dot(K_nn, w_ng[:,g])) for g in xrange(D))
+    if return_tuple:
+        return res_cost, bend_cost, res_cost + bend_cost
+    else:
+        return res_cost + bend_cost
+
+def krig_cost(lin_ag, trans_g, w_ng, x_na, y_ng, exs, eys, bend_coef, K_nn = None, return_tuple = False, wt_n = None):
+    d = lin_ag.shape[0]
+    if K_nn is None: K_nn = ku.krig_kernel_mat(1.5, x_na, exs)
+    D = ku.krig_mat_linear(x_na, x_na, exs)
+    if wt_n is None: wt_n = np.ones(len(x_na))
+    ypred_ng = np.dot(K_nn, w_ng) + np.dot(D, lin_ag) + trans_g[None, :]
+    res_cost = (wt_n[:,None]*(ypred_ng-y_ng)**2).sum()
+    bend_cost = bend_coef*sum(np.dot(w_ng[:,g], np.dot(K_nng, w_ng[:,g])) for g in xrange(d))
     if return_tuple:
         return res_cost, bend_cost, res_cost + bend_cost
     else:
@@ -259,6 +343,7 @@ def solve_eqp1(H, f, A):
     
     return x
     
+#@profile
 def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n = None):
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
@@ -281,61 +366,6 @@ def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n = None):
     
     return Theta[1:d+1], Theta[0], Theta[d+1:]
     
-
-def tps_fit3_cvx(x_na, y_ng, bend_coef, rot_coef, wt_n):
-    """
-    Use cvx instead of just matrix multiply.
-    Working with null space of matrices.
-    """
-
-    if wt_n is None: wt_n = co.matrix(np.ones(len(x_na)))
-    n,d = x_na.shape
-    K_nn = tps_kernel_matrix(x_na)
-    _,_,VT = nlg.svd(np.c_[x_na,np.ones((x_na.shape[0],1))].T)
-    Nmat = VT.T[:,d+1:]
-    rot_coefs = np.diag(np.ones(d) * rot_coef if np.isscalar(rot_coef) else rot_coef)
-    
-    
-    A = cp.Variable(Nmat.shape[1],d)
-    B = cp.Variable(d,d)
-    c = cp.Variable(d,1)
-    
-    Y = co.matrix(y_ng)
-    K = co.matrix(K_nn)
-    N = co.matrix(Nmat)
-    X = co.matrix(x_na)
-    W = co.matrix(np.diag(wt_n).copy())
-    R = co.matrix(rot_coefs)
-    ones = co.matrix(np.ones((n,1)))
-    
-    constraints = []
-    
-    # For correspondences
-    V1 = cp.Variable(n,d)
-    constraints.append(V1 == Y-K*N*A-X*B - ones*c.T)
-    V2 = cp.Variable(n,d)
-    constraints.append(V2 == cp.sqrt(W)*V1)
-    # For bending cost
-    Q = [] # for quadratic forms
-    for i in range(d):
-        Q.append(cp.quad_form(A[:,i], N.T*K*N))
-    # For rotation cost
-    # Element wise square root actually works here as R is diagonal and positive
-    V3 = cp.Variable(d,d)
-    constraints.append(V3 == cp.sqrt(R)*B)
-    
-    # Orthogonality constraints for bending are taken care of already because working with the null space
-    #constraints.extend([X.T*A == 0, ones.T*A == 0])
-    
-    # TPS objective
-    objective = cp.Minimize(cp.sum_squares(V2) + bend_coef*sum(Q) + cp.sum_squares(V3))
-    p = cp.Problem(objective, constraints)
-    p.solve(verbose=True)
-
-
-
-    
-    return np.array(B.value), np.squeeze(np.array(c.value)) , Nmat.dot(np.array(A.value))
     
     
 def tps_fit2(x_na, y_ng, bend_coef, rot_coef, wt_n=None):
@@ -720,6 +750,84 @@ def tps_fit3_cvx_test(x_na, y_ng, bend_coef, rot_coef, wt_n):
 
 
 
+def main():
+    from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in
+    from tn_eval.tps_utils import find_all_normals_naive
+    pts1 = gen_half_sphere(1, 30)
+    pts2 = gen_half_sphere_pulled_in(1, 30, 4, .2)
+    alpha = 1.5
+
+    tps_fit3(pts1, pts2, .1, 1e-4)
+
+
+"""
+Eypts = Ys
+alpha = 1.5
+
+n, d = Xs.shape
+m, _ = Epts.shape
+s, _ = Ys.shape
+j, _ = Eypts.shape
+Y = np.tile(Ys, (1,m)).reshape(s,m,1,d)
+EX = np.tile(Epts, (s, 1)).reshape(s, m, 1, d)
+YEdiff = Y-EX # [[[y_1 - e_1], ..., [y_1 - e_m]], ..., [[y_n - e_1], ..., [y_n - e_m]]]
+
+EY = np.tile(Eypts, (1,n)).reshape(j,n,1,d)
+X = np.tile(Xs, (j, 1)).reshape(j, n, 1, d)
+EYdiff = EY-X # [[[ey_1 - x_1], ..., [ey_1 - x_n]], ..., [[ey_m - x_1], ..., [ey_m - x_m]]]
+
+E_xs = np.tile(Eypts, (1,m)).reshape(j, m, 1, d) 
+E_ys = np.tile(Epts, (j,1)).reshape(j, m, 1, d)
+Ediff = E_xs - E_ys #[[ey1-e1], ..., [ey_1 - e_m], ..., [ey_m-e_1], ..., [ey_m - e_m]]
+
+Exs = np.array([E1s[:, 0]]) #x components of E1s
+Eys = np.array([E1s[:, 1]]) #y components of E1s
+
+nYE = np.sum(np.abs(YEdiff)**2,axis=-1).reshape(s,m) # squared norm of each element y_i-e_j of Y-EX
+nEY = np.sum(np.abs(EYdiff)**2,axis=-1).reshape(j,n) # squared norm of each element ey_i-x_j of Y-EX #checked
+
+dist_mat = ssd.cdist(Ys, Xs)**2 #squared norm between Xs and Ys
+E_dist_mat = ssd.cdist(Eypts, Epts)**2  #squared norm between Epts 
+
+yedist_x = YEdiff[0:, 0:, 0, 0] # difference in x coordinates of y_i and e_j i.e. x_i_x - e_j_x
+Edist_x = Ediff[0:, 0:, 0, 0] # difference in x coordinates of ey_i and e_j i.e. ey_i_x - e_j_x
+eydist_x = EYdiff[0:, 0:, 0, 0] # difference in x coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
+yedist_y = YEdiff[0:, 0:, 0, 1] # difference in y coordinates of y_i and e_j i.e. x_i_x - e_j_x
+Edist_y = Ediff[0:, 0:, 0, 1] # difference in y coordinates of ey_i and e_j i.e. ey_i_x - e_j_x
+eydist_y = EYdiff[0:, 0:, 0, 1] # difference in y coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
+yedist_z = YEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
+Edist_z = Ediff[0:, 0:, 0, 2] # difference in z coordinates of e_i and e_j i.e. e_i_x - e_j_x
+Ezs = np.array([E1s[:, 2]]) #z components of E1s
+eydist_z = EYdiff[0:, 0:, 0, 2]## 
+
+nEYsqrt = np.sqrt(nEY)
+S_10x  = eydist_x*nEYsqrt#dsigma/dx.T
+S_10y  = eydist_y*nEYsqrt#dsigma/dy.T
+S_10z  = eydist_z*nEYsqrt#
+
+Esqrt = np.sqrt(E_dist_mat)
+S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy
+S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
+S_11zz = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_z)/Esqrt) #dsigma/dzdz
+S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
+S_11yz = nan2zero(Edist_y*Edist_z/Esqrt) #dsigma/dydz
+S_11xz = nan2zero(Edist_x*Edist_z/Esqrt) #d
+
+assert Ys.shape[1] == 3
+
+grad_mga = np.zeros((s,d,d))
+
+lin_ga = lin_ag.T
+
+grad_mga[:,:,0] = lin_ga[None,:,0]  + np.dot(np.c_[S_10x, Exs*S_11xx + Eys*S_11xy + Ezs*S_11xz], w_ng)
+grad_mga[:,:,1] = lin_ga[None,:,1]  + np.dot(np.c_[S_10y, Eys*S_11yy + Exs*S_11xy + Ezs*S_11yz], w_ng)
+grad_mga[:,:,2] = lin_ga[None,:,2]  + np.dot(np.c_[S_10z, Ezs*S_11zz + Eys*S_11yz + Exs*S_11xz], w_ng)
+"""
+
+
+
+if __name__ == "__main__":
+    main()
 
 
 

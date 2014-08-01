@@ -13,13 +13,13 @@ Slope functions are old Kernels for landmarks + derivatives for slopes.
 from __future__ import division
 import numpy as np, numpy.linalg as nlg
 import scipy.linalg as slg
-import cvxopt as co, cvxpy as cp
+#import cvxopt as co, cvxpy as cp
 
 
 import tps_utils as tu
 from tn_rapprentice import registration, tps
 
-from cvxpy.atoms.affine.transpose import transpose
+#from cvxpy.atoms.affine.transpose import transpose
 
 
 def transformed_normal_direction(x,ex,f,delta):

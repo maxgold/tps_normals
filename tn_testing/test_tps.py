@@ -1,14 +1,14 @@
 import numpy as np
-from mayavi import mlab
+#from mayavi import mlab
 
 import tn_eval.tps_utils as tu
 from tn_utils import clouds
-from tn_utils.colorize import colorize
+#from tn_utils.colorize import colorize
 from tn_eval.baseline import tps_rpm_bij_normals_naive, tps_rpm_bij_normals, fit_ThinPlateSpline_normals
 from tn_eval import tps_evaluate as te
 from tn_rapprentice.registration import tps_rpm_bij, fit_ThinPlateSpline
-from tn_visualization import mayavi_utils
-from tn_visualization.mayavi_plotter import PlotterInit, gen_custom_request, gen_mlab_request
+#from tn_visualization import mayavi_utils
+#from tn_visualization.mayavi_plotter import PlotterInit, gen_custom_request, gen_mlab_request
 
 np.set_printoptions(precision=4, suppress=True, threshold=400)
 
@@ -304,7 +304,19 @@ def gen_circle_points_pulled_in (rad, n, m, alpha):
 #     IPython.embed()
     return pts
 
+def gen_half_sphere(rad, n):
+    a = np.c_[gen_circle_points(rad, n) , np.zeros((n, 1))]
+    b = np.c_[gen_circle_points(rad*(3**.5)/2, n), np.ones((n, 1))*.5]
+    c = np.c_[gen_circle_points(rad*.5, n), np.ones((n,1))*(3**.5)/2]
 
+    return np.r_[a,b,c]
+
+def gen_half_sphere_pulled_in(rad, n, m ,alpha):
+    a = np.c_[gen_circle_points_pulled_in(rad, n, m, alpha) , np.zeros((n, 1))]
+    b = np.c_[gen_circle_points_pulled_in(rad*(3**.5)/2, n, m, alpha), np.ones((n, 1))*.5]
+    c = np.c_[gen_circle_points_pulled_in(rad*.5, n, m, alpha), np.ones((n,1))*(3**.5)/2]
+
+    return np.r_[a,b,c]
 
 
 def test_normals_new2 ():

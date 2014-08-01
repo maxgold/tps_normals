@@ -3,6 +3,7 @@ import scipy as sp, scipy.spatial.distance as ssd
 from math import floor
 
 from tn_rapprentice.tps import solve_eqp1, nan2zero
+from tn_eval.tps_utils import find_all_normals_naive
 
 
 
@@ -68,8 +69,7 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 	Exs = np.array([E1s[:, 0]]) #x components of E1s
 	Eys = np.array([E1s[:, 1]]) #y components of E1s
 	
-	
-	nX = np.sum(np.abs(XEdiff)**2,axis=-1).reshape(n,m) # squared norm of each element x_i-e_j of X-EX
+	nX = np.sum(np.abs(XEdiff)**2,axis=-1).reshape(n,m) # squared norm of each element x_i-e_j of X-EX #can rewrite these with nlg.norm
 	nEX = np.sum(np.abs(EXdiff)**2,axis=-1).reshape(m,n) # squared norm of each element ey_i-x_j of Y-EX
 
 	dist_mat = ssd.squareform(ssd.pdist(Xs))**2 #squared norm between Xs
@@ -83,24 +83,34 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 	exdist_y = EXdiff[0:, 0:, 0, 1] # difference in y coordinates of e_i and x_j i.e. ey_i_x - x_j_x
 
 	if d == 2:	
-		S_00   = (-1)**(floor(alpha)+1)*dist_mat**(alpha) #sigma
-		S_01x  = Exs*-2*alpha*(-1)**(floor(alpha)+1)*xedist*nX**(alpha-1) # dsigma/dx
-		S_01y  = Eys*-2*alpha*(-1)**(floor(alpha)+1)*yedist*nX**(alpha-1) # dsigma/dy
+		dist_mat_sqrt = np.sqrt(dist_mat)
+		S_00   = dist_mat*dist_mat_sqrt #sigma
+		
+		nXsqrt = np.sqrt(nX)
+		S_01x  = Exs*xedist*nXsqrt # dsigma/dx
+		S_01y  = Eys*yedist*nXsqrt # dsigma/dy
 
-		S_10x  = Exs.T*2*alpha*(-1)**(floor(alpha)+1)*exdist_x*nEX**(alpha-1)#dsigma/dx.T
-		S_10y  = Eys.T*2*alpha*(-1)**(floor(alpha)+1)*exdist_y*nEX**(alpha-1)#dsigma/dy.T
+		nEXsqrt = np.sqrt(nEX)
+		S_10x  = Exs*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
+		S_10y  = Eys*exdist_y*nEXsqrt#dsigma/dy.T
 		#S_10x  = Exs*S_01x.T#dsigma/dx.T
 		#S_10y  = Eys*S_01y.T #dsigma/dy.T
 		
-		S_11xx = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Exdist**2*E_dist_mat**(alpha-2))) #dsigma/dxdy
-		S_11xy = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Exdist*Eydist*E_dist_mat**(alpha-2)) #dsigma/dxdy
-		S_11yy = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Eydist**2*E_dist_mat**(alpha-2))) #dsigma/dydy
+		# is copying expensive?
+		E_dist_mat1 = E_dist_mat.copy()
+		np.fill_diagonal(E_dist_mat1, 1)
+		Esqrt = np.sqrt(E_dist_mat)
+		Esqrt1 = np.sqrt(E_dist_mat1)
+
+		S_11xx = Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1 #dsigma/dxdy
+		S_11xy = Exdist*Eydist/Esqrt1 #dsigma/dxdy
+		S_11yy = Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1 #dsigma/dydy
 
 		S_01   = S_01x + S_01y
 		S_10   = S_10x + S_10y
-		S_11   = Exs.T*Exs*S_11xx + Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy + Eys.T*Eys*S_11yy
+		S_11   = -2*alpha*(Exs.T*Exs.T*S_11xx + Eys.T*Eys.T*S_11yy) -4*alpha*(Exs.T*Eys.T*S_11xy + Eys.T*Exs.T*S_11xy)
 
-		return np.r_[np.c_[S_00, S_01], np.c_[S_10, S_11]]
+		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 
 	elif d==3:
 		zedist = XEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
@@ -109,28 +119,37 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 		exdist_z = EXdiff[0:, 0:, 0, 2]## difference in z coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
 
 		#top of Sigma
-		S_00 = (-1)**(floor(alpha)+1)*dist_mat**(alpha) #sigma
-		S_01x = Exs*-2*alpha*(-1)**(floor(alpha)+1)*xedist*nX**(alpha-1) # dsigma/dx
-		S_01y = Eys*-2*alpha*(-1)**(floor(alpha)+1)*yedist*nX**(alpha-1) # dsigma/dy
-		S_01z = Ezs*-2*alpha*(-1)**(floor(alpha)+1)*zedist*nX**(alpha-1)
+		dist_matsqrt = np.sqrt(dist_mat)
+		S_00 = dist_mat*dist_matsqrt #sigma
+		
+		nXsqrt = np.sqrt(nX)
+		S_01x = xedist*nXsqrt # dsigma/dx
+		S_01y = yedist*nXsqrt # dsigma/dy
+		S_01z = zedist*nXsqrt
 
 		#bottom of Sigma
-		S_10x  = Exs.T*2*alpha*(-1)**(floor(alpha)+1)*exdist_x*nEX**(alpha-1)#dsigma/dx.T
-		S_10y  = Eys.T*2*alpha*(-1)**(floor(alpha)+1)*exdist_y*nEX**(alpha-1)#dsigma/dy.T
-		S_10z  = Ezs.T*2*alpha*(-1)**(floor(alpha)+1)*exdist_z*nEX**(alpha-1)#dsigma/dz.T
+		nEXsqrt = np.sqrt(nEX)
+		S_10x  = exdist_x*nEXsqrt#dsigma/dx.T
+		S_10y  = exdist_y*nEXsqrt#dsigma/dy.T
+		S_10z  = exdist_z*nEXsqrt#dsigma/dz.T
 		
-		S_11xx = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Exdist**2*E_dist_mat**(alpha-2))) #dsigma/dxdy
-		S_11yy = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Eydist**2*E_dist_mat**(alpha-2))) #dsigma/dydy
-		S_11zz = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Ezdist**2*E_dist_mat**(alpha-2))) #dsigma/dzdz
-		S_11xy = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Exdist*Eydist*E_dist_mat**(alpha-2)) #dsigma/dxdy
-		S_11yz = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Eydist*Ezdist*E_dist_mat**(alpha-2)) #dsigma/dydz
-		S_11xz = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Exdist*Ezdist*E_dist_mat**(alpha-2)) #dsigma/dxdz
+		E_dist_mat1 = E_dist_mat.copy()
+		np.fill_diagonal(E_dist_mat1, 1)
+		Esqrt = np.sqrt(E_dist_mat)
+		Esqrt1 = np.sqrt(E_dist_mat1)
+		
+		S_11xx = Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1 #dsigma/dxdy
+		S_11yy = Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1 #dsigma/dydy
+		S_11zz = Esqrt + 2*(alpha-1)*np.square(Ezdist)/Esqrt1 #dsigma/dzdz
+		S_11xy = Exdist*Eydist/Esqrt1 #dsigma/dxdy
+		S_11yz = Eydist*Ezdist/Esqrt1 #dsigma/dydz
+		S_11xz = Exdist*Ezdist/Esqrt1 #dsigma/dxdz
 
-		S_01   = S_01x + S_01y + S_01z
-		S_10   = S_10x + S_10y + S_10z
-		S_11   = Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy + Ezs.T*Ezs*S_11zz + Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy + Eys.T*Ezs*S_11yz + Ezs.T*Eys*S_11yz+ Exs.T*Ezs*S_11xz + Ezs.T*Exs*S_11xz 
+		S_01   = Exs*S_01x + Eys*S_01y + Ezs*S_01z
+		S_10   = Exs.T*S_10x + Eys.T*S_10y + Ezs.T*S_10z
+		S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy + Ezs.T*Ezs*S_11zz) - 4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy + Eys.T*Ezs*S_11yz + Ezs.T*Eys*S_11yz+ Exs.T*Ezs*S_11xz + Ezs.T*Exs*S_11xz) 
 
-		return np.r_[np.c_[S_00, S_01], np.c_[S_10, S_11]]
+		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 	else:
 		raise NotImplementedError
 
@@ -147,16 +166,17 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 	n, d = Xs.shape
 	m, _ = Epts.shape
 	s, _ = Ys.shape
+	j, _ = Eypts.shape
 	Y = np.tile(Ys, (1,m)).reshape(s,m,1,d)
 	EX = np.tile(Epts, (s, 1)).reshape(s, m, 1, d)
 	YEdiff = Y-EX # [[[y_1 - e_1], ..., [y_1 - e_m]], ..., [[y_n - e_1], ..., [y_n - e_m]]]
 
-	EY = np.tile(Eypts, (1,n)).reshape(m,n,1,d)
-	X = np.tile(Xs, (m, 1)).reshape(m, n, 1, d)
+	EY = np.tile(Eypts, (1,n)).reshape(j,n,1,d)
+	X = np.tile(Xs, (j, 1)).reshape(j, n, 1, d)
 	EYdiff = EY-X # [[[ey_1 - x_1], ..., [ey_1 - x_n]], ..., [[ey_m - x_1], ..., [ey_m - x_m]]]
 	
-	E_xs = np.tile(Eypts, (1,m)).reshape(m, m, 1, d) 
-	E_ys = np.tile(Epts, (m,1)).reshape(m, m, 1, d)
+	E_xs = np.tile(Eypts, (1,m)).reshape(j, m, 1, d) 
+	E_ys = np.tile(Epts, (j,1)).reshape(j, m, 1, d)
 	Ediff = E_xs - E_ys #[[ey1-e1], ..., [ey_1 - e_m], ..., [ey_m-e_1], ..., [ey_m - e_m]]
 	
 	Exs = np.array([E1s[:, 0]]) #x components of E1s
@@ -166,7 +186,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 	
 	
 	nYE = np.sum(np.abs(YEdiff)**2,axis=-1).reshape(s,m) # squared norm of each element y_i-e_j of Y-EX
-	nEY = np.sum(np.abs(EYdiff)**2,axis=-1).reshape(m,n) # squared norm of each element ey_i-x_j of Y-EX #checked
+	nEY = np.sum(np.abs(EYdiff)**2,axis=-1).reshape(j,n) # squared norm of each element ey_i-x_j of Y-EX #checked
 	
 	dist_mat = ssd.cdist(Ys, Xs)**2 #squared norm between Xs and Ys
 	E_dist_mat = ssd.cdist(Eypts, Epts)**2  #squared norm between Epts 
@@ -179,26 +199,29 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 	eydist_y = EYdiff[0:, 0:, 0, 1] # difference in y coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
 
 	if d == 2:	
-		S_00   = (-1)**(floor(alpha)+1)*dist_mat**(alpha) #sigma
+		dist_mat_sqrt = np.sqrt(dist_mat)
+		S_00   = dist_mat*dist_mat_sqrt
 		
-		S_01x  = -2*alpha*(-1)**(floor(alpha)+1)*yedist_x*nYE**(alpha-1) # dsigma/dx
-		S_01y  = -2*alpha*(-1)**(floor(alpha)+1)*yedist_y*nYE**(alpha-1) # dsigma/dy
+		nYEsqrt = np.sqrt(nYE)
+		S_01x  = yedist_x*nYEsqr #dsigma/dx
+		S_01y  = yedist_y*nYEsqr #dsigma/dy
 
-		S_10x  = 2*alpha*(-1)**(floor(alpha)+1)*eydist_x*nEY**(alpha-1)#dsigma/dx.T
-		S_10y  = 2*alpha*(-1)**(floor(alpha)+1)*eydist_y*nEY**(alpha-1)#dsigma/dy.T
+		nEYsqrt = np.sqrt(nEY)
+		S_10x  = eydist_x*nEYsqrt#dsigma/dx.T
+		S_10y  = eydist_y*nEYsqrt#dsigma/dy.T
 		
-		S_11xx = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Edist_x**2*E_dist_mat**(alpha-2))) #dsigma/dxdy
-		S_11xy = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Edist_x*Edist_y*E_dist_mat**(alpha-2)) #dsigma/dxdy
-		S_11yy = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Edist_y**2*E_dist_mat**(alpha-2))) #dsigma/dydy
+		Esqrt = np.sqrt(E_dist_mat)
+		S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy
+		S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
+		S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
 
-		S_01   = Exs*S_01x + Eys*S_01y
+		S_01   = Exs.T*S_01x + Eys.T*S_01y
 		S_10   = Exsr.T*S_10x + Eysr.T*S_10y
-		S_11   = Exsr.T*Exs*S_11xx + Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy + Eysr.T*Eys*S_11yy
+		S_11   = -2*alpha*(Exsr.T*Exs.T*S_11xx + Eysr.T*Eys.T*S_11yy) - 4*alpha*(Exsr.T*Eys.T*S_11xy + Eysr.T*Exs.T*S_11xy) 
 
-		return np.r_[np.c_[S_00, S_01], np.c_[S_10, S_11]]
+		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 
 	elif d==3:
-		#something is wrong with the Ezsr part
 		yedist_z = YEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
 		Edist_z = Ediff[0:, 0:, 0, 2] # difference in z coordinates of e_i and e_j i.e. e_i_x - e_j_x
 		Ezs = np.array([E1s[:, 2]]) #z components of E1s
@@ -206,29 +229,34 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		eydist_z = EYdiff[0:, 0:, 0, 2]## difference in z coordinates of ey_i and x_j i.e. ey_i_x - x_j_x
 
 		#top of Sigma
-		S_00 = (-1)**(floor(alpha)+1)*dist_mat**(alpha) #sigma
+		dist_matsqrt = np.sqrt(dist_mat)
+		S_00 = dist_mat*dist_matsqrt #sigma
 		
-		S_01x = -2*alpha*(-1)**(floor(alpha)+1)*yedist_x*nYE**(alpha-1) # dsigma/dx
-		S_01y = -2*alpha*(-1)**(floor(alpha)+1)*yedist_y*nYE**(alpha-1) # dsigma/dy
-		S_01z = -2*alpha*(-1)**(floor(alpha)+1)*yedist_z*nYE**(alpha-1)
+		nYEsqrt = np.sqrt(nYE)
+		S_01x = yedist_x*nYEsqrt # dsigma/dx
+		S_01y = yedist_y*nYEsqrt # dsigma/dy
+		S_01z = yedist_z*nYEsqrt
 
 		#bottom of Sigma
-		S_10x  = 2*alpha*(-1)**(floor(alpha)+1)*eydist_x*nEY**(alpha-1)#dsigma/dx.T
-		S_10y  = 2*alpha*(-1)**(floor(alpha)+1)*eydist_y*nEY**(alpha-1)#dsigma/dy.T
-		S_10z  = 2*alpha*(-1)**(floor(alpha)+1)*eydist_z*nEY**(alpha-1)#dsigma/dz.T
+		nEYsqrt = np.sqrt(nEY)
+		S_10x  = eydist_x*nEYsqrt#dsigma/dx.T
+		S_10y  = eydist_y*nEYsqrt#dsigma/dy.T
+		S_10z  = eydist_z*nEYsqrt#dsigma/dz.T
 		
-		S_11xx = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Edist_x**2*E_dist_mat**(alpha-2))) #dsigma/dxdy
-		S_11yy = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Edist_y**2*E_dist_mat**(alpha-2))) #dsigma/dydy
-		S_11zz = -2*alpha*(-1)**(floor(alpha)+1)*(E_dist_mat**(alpha-1) + 2*(alpha-1)*nan2zero(Edist_z**2*E_dist_mat**(alpha-2))) #dsigma/dzdz
-		S_11xy = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Edist_x*Edist_y*E_dist_mat**(alpha-2)) #dsigma/dxdy
-		S_11yz = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Edist_y*Edist_z*E_dist_mat**(alpha-2)) #dsigma/dydz
-		S_11xz = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(Edist_x*Edist_z*E_dist_mat**(alpha-2)) #dsigma/dxdz
+		Esqrt = np.sqrt(E_dist_mat)
+		S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy
+		S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
+		S_11zz = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_z)/Esqrt) #dsigma/dzdz
+		S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
+		S_11yz = nan2zero(Edist_y*Edist_z/Esqrt) #dsigma/dydz
+		S_11xz = nan2zero(Edist_x*Edist_z/Esqrt) #dsigma/dxdz
 
 		S_01   = Exs*S_01x + Eys*S_01y + Ezs*S_01z
 		S_10   = Exsr.T*S_10x + Eysr.T*S_10y + Ezsr.T*S_10z
-		S_11   = Exsr.T*Exs*S_11xx + Eysr.T*Eys*S_11yy + Ezsr.T*Ezs*S_11zz + Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy + Eysr.T*Ezs*S_11yz + Ezsr.T*Eys*S_11yz+ Exsr.T*Ezs*S_11xz + Ezsr.T*Exs*S_11xz 
+		#S_10   = Exsr*S_10x + Eysr*S_10y + Ezsr*S_10z
+		S_11   = -2*alpha*(Exsr.T*Exs*S_11xx + Eysr.T*Eys*S_11yy + Ezsr.T*Ezs*S_11zz) - 4*alpha*(Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy + Eysr.T*Ezs*S_11yz + Ezsr.T*Eys*S_11yz+ Exsr.T*Ezs*S_11xz + Ezsr.T*Exs*S_11xz) 
 
-		return np.r_[np.c_[S_00, S_01], np.c_[S_10, S_11]]
+		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 	else:
 		raise NotImplementedError
 
@@ -243,15 +271,6 @@ def krig_mat_linear(Xs, Epts, Exs):
 
 	return np.r_[D1, D2]
 	#return np.r_[D1, D2]
-def krig_mat_linear2(Xs, Epts):
-	n, d = Xs.shape
-	m,_ = Epts.shape
-	assert Xs.shape[1] == Epts.shape[1]
-
-	D1 = np.c_[np.ones((n,1)), Xs, Xs[:,0][:,None]**2, Xs[:,0][:,None]*Xs[:,1][:,None], Xs[:, 1][:,None]**2]
-	D2 = np.c_[np.zeros((m,1)), np.ones((m,d)), 2*Epts[:,0][:,None], Epts[:,0][:,None] + Epts[:,1][:,None], 2*Epts[:,1][:,None] ]
-
-	return np.r_[D1, D2]
 
 def krig_fn(alpha, Xs, Ys, Epts, Exs, Eys):
 	"""
@@ -270,71 +289,25 @@ def krig_fn(alpha, Xs, Ys, Epts, Exs, Eys):
 
 	return nlg.solve(K, targ)
 
-def bending_energyweird(S, D, dim):
-	"""
-	computes bending energy of kriging function given by matrices S and D
-	S is the kriging kernel matrix and D is the linear matrix
-	"""
-	"""
-	DTDinv = nlg.inv(D.T.dot(D))
-	P = D.dot(DTDinv).dot(D.T)
-	I = np.eye(P.shape[0])
-	B1 = (I-P).dot(S).dot(I-P)
-	B = nlg.pinv(B1)
-	"""
-
-
-	K = np.r_[np.c_[S, D], np.c_[D.T, np.zeros((dim+1, dim+1))]]
-
-	#return nlg.inv(K)
-	return nlg.inv(K)
 
 def bending_energynormal(S,D, dim):
 	
 	#return np.r_[np.c_[S, D], np.c_[D.T, np.zeros((dim+1, dim+1))]]
 	return S
 
-def krig_fit1Weird(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None):
+#@profile
+def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None, rot_coefs = 1e-5):
+	# This uses euclidean difference for normals. Change it to angle difference?
+
 	assert Xs.shape[1] == Exs.shape[1]
 	assert Xs.shape[1] == Ys.shape[1]
+	assert Exs.shape[0] == Eys.shape[0]
 	
 	n,dim = Xs.shape
 	m,_ = Exs.shape
-	#wt_n = 1.0/(n+m)
 	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
 	wt_n[n:]*=normal_coef
-	#if wt_n is None: wt_n = np.ones(n+m)
-
-	Y = np.r_[Ys, Eys]
-
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear(Xs, Epts, Exs)
-	B = bending_energyweird(S, D, dim)
-
-	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
-	WQ = wt_n[:,None]*Q
-	H = Q.T.dot(WQ)
-	#H[:n+m, :n+m] += bend_coef*B
-	H[:n+m, :n+m] += bend_coef*B[:n+m, :n+m]
-	f = -WQ.T.dot(Y)
-
-	A = np.c_[D.T, np.zeros((dim+1, dim+1))]
-
-	Theta = solve_eqp1(H, f, A)
-
-	return Theta[:n+m], Theta[n+m:]
-
-def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None):
-	assert Xs.shape[1] == Exs.shape[1]
-	assert Xs.shape[1] == Ys.shape[1]
-	
-	n,dim = Xs.shape
-	m,_ = Exs.shape
-	#wt_n = 1.0/(n+m)
-	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-	wt_n[n:]*=normal_coef
-	#if wt_n is None: wt_n = np.ones(n+m)
+	rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
 
 	Y = np.r_[Ys, Eys]
 
@@ -343,46 +316,19 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef =
 	B = bending_energynormal(S, D, dim)
 
 	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
 	WQ = wt_n[:,None]*Q
 	H = Q.T.dot(WQ)
-	#H[:n+m, :n+m] += bend_coef*B
 	H[:n+m, :n+m] += bend_coef*B
+	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
 	f = -WQ.T.dot(Y)
+	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
 
 	A = np.c_[D.T, np.zeros((dim+1, dim+1))]
 
 	Theta = solve_eqp1(H, f, A)
 
-	return Theta[:n+m], Theta[n+m:]
+	return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
 
-
-def krig_fit2(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None):
-	n,dim = Xs.shape
-	m,_ = Exs.shape
-	#wt_n = 1.0/(n+m)
-	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-	wt_n[n:]*=normal_coef
-	#if wt_n is None: wt_n = np.ones(n+m)
-
-	Y = np.r_[Ys, Eys]
-
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear2(Xs, Epts)
-	B = bending_energy(S, D)
-
-	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
-	WQ = wt_n[:,None]*Q
-	H = Q.T.dot(WQ)
-	H[:n+m, :n+m] += bend_coef*B
-	f = -WQ.T.dot(Y)
-
-	A = np.c_[D.T, np.zeros((6, 6))]
-
-	Theta = solve_eqp1(H, f, A)
-
-	return Theta[:n+m], Theta[n+m:]
 
 def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 	n, dim = Xs.shape
@@ -406,6 +352,7 @@ def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 
 	return Theta[:n], Theta[n:]
 
+#Doesn't matter
 
 def krig_objective2(Xs, Ys, Epts, Exs, Eys, bend_coef, alpha = 1.5, normal_coef = 1):
 	"""
@@ -519,9 +466,6 @@ def krig_test(n_iter, alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef
 
 
 
-
-
-
 def krig_fit2t(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None):
 	n,dim = Xs.shape
 	m,_ = Exs.shape
@@ -586,11 +530,21 @@ def derivativeyx(f, x, epsilon = 1e-6):
 	xpert[:,0] = xpert[:,0] + epsilon
 	return (derivativey(f, xpert, epsilon) - derivativey(f,x,epsilon))/epsilon
 
-def derivativexx(f, x, epsilon = 1e-6):
+def derivativeyy(f, x, epsilon = 1e-6):
 	xpert = x.copy()
 	xpert[:,1] = xpert[:,1] + epsilon
 	return (derivativey(f, xpert, epsilon) - derivativey(f,x,epsilon))/epsilon
 
+#normals finding
+
+def find_rope_normals(pts1):
+	normals = find_all_normals_naive(pts1, .15, flip_away=True)
+	avg = np.average(pts1)
+	for ex in normals:
+		if ex[2] < avg:
+			ex[2] = -ex[2]
+
+	return normals
 
 
 
@@ -644,6 +598,33 @@ S2 = np.c_[S_10, S_11]
 
 dist_mat = ssd.cdist(pts, pts1)**2
 
+assert Xs.shape[1] == Exs.shape[1]
+assert Xs.shape[1] == Ys.shape[1]
+
+n,dim = Xs.shape
+m,_ = Exs.shape
+if wt_n is None: wt_n = np.ones(n+m)/(n+m)
+wt_n[n:]*=normal_coef
+rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
+
+Y = np.r_[Ys, Eys]
+
+S = krig_kernel_mat(alpha, Xs, Epts, Exs)
+D = krig_mat_linear(Xs, Epts, Exs)
+B = bending_energynormal(S, D, dim)
+
+Q = np.c_[S, D]
+WQ = wt_n[:,None]*Q
+H = Q.T.dot(WQ)
+H[:n+m, :n+m] += bend_coef*B
+#H[n+m+1:, n+m+1:] += np.diag(rot_coefs)
+f = -WQ.T.dot(Y)
+#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this
+
+A = np.c_[D.T, np.zeros((dim+1, dim+1))]
+
+Theta = solve_eqp1(H, f, A)
+
 
 
 """
@@ -652,21 +633,89 @@ dist_mat = ssd.cdist(pts, pts1)**2
 
 
 
+def main():
+    from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in
+    from tn_eval.tps_utils import find_all_normals_naive
+    pts1 = gen_half_sphere(1, 30)
+    pts2 = gen_half_sphere_pulled_in(1, 30, 4, .2)
+    e1 = find_all_normals_naive(pts1, .7, flip_away=True)
+    e2 = find_all_normals_naive(pts2, .7, flip_away=True)
+    Xs = pts1
+    Epts = pts1
+    Exs = e1
+    Ys = pts2
+    Eys = e2
+    alpha = 1.5
+
+    krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys)
 
 
 
 
 
+if __name__ == "__main__":
+    main()
 
 
+"""
+n, d = Xs.shape
+m, _ = Epts.shape
+X = np.tile(Xs, (1,m)).reshape(n, m, 1, d)
+EX = np.tile(Epts, (n, 1)).reshape(n, m, 1, d)
+XEdiff = X-EX # [[[x_1 - e_1], ..., [x_1 - e_m]], ..., [[x_n - e_1], ..., [x_n - e_m]]]
 
+XE = np.tile(Epts, (1,n)).reshape(m,n,1,d)
+X = np.tile(Xs, (m, 1)).reshape(m, n, 1, d)
+EXdiff = XE-X # [[[ex_1 - x_1], ..., [ex_1 - x_n]], ..., [[ex_m - x_1], ..., [ex_m - x_m]]]
+	
+E_xs = np.tile(Epts, (1,m)).reshape(m, m, 1, d) 
+E_ys = np.tile(Epts, (m,1)).reshape(m, m, 1, d)
+Ediff = E_xs - E_ys #[[e1-e1], ..., [ e_m - e_1], ..., [e_m-e_1], ..., [e_m - e_m]]
+Exs = np.array([E1s[:, 0]]) #x components of E1s
+Eys = np.array([E1s[:, 1]]) #y components of E1s
+	
+nX = np.sum(np.abs(XEdiff)**2,axis=-1).reshape(n,m) # squared norm of each element x_i-e_j of X-EX #can rewrite these with nlg.norm
+nEX = np.sum(np.abs(EXdiff)**2,axis=-1).reshape(m,n) # squared norm of each element ey_i-x_j of Y-EX
 
+dist_mat = ssd.squareform(ssd.pdist(Xs, 'sqeuclidean')) #squared norm between Xs
+E_dist_mat = ssd.squareform(ssd.pdist(Epts))**2 #squared norm between Epts
 
+xedist = XEdiff[0:, 0:, 0, 0] # difference in x coordinates of x_i and e_j i.e. x_i_x - e_j_x
+Exdist = Ediff[0:, 0:, 0, 0] # difference in x coordinates of e_i and e_j i.e. e_i_x - e_j_x
+exdist_x = EXdiff[0:, 0:, 0, 0] # difference in x coordinates of e_i and x_j i.e. ey_i_x - x_j_x
+yedist = XEdiff[0:, 0:, 0, 1] # difference in y coordinates of x_i and e_j i.e. x_i_x - e_j_x
+Eydist = Ediff[0:, 0:, 0, 1] # difference in y coordinates of e_i and e_j i.e. e_i_x - e_j_x
+exdist_y = EXdiff[0:, 0:, 0, 1] # difference in y coordinates of e_i and x_j i.e. ey_i_x - x_j_x
 
+		
+dist_mat_sqrt = np.sqrt(dist_mat)
+S_00   = dist_mat*dist_mat_sqrt #sigma
+		
+nXsqrt = np.sqrt(nX)
+S_01x  = Exs*xedist*nXsqrt # dsigma/dx
+S_01y  = Eys*yedist*nXsqrt # dsigma/dy
 
+nEXsqrt = np.sqrt(nEX)
+S_10x  = Exs*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
+S_10y  = Eys*exdist_y*nEXsqrt#dsigma/dy.T
+#S_10x  = Exs*S_01x.T#dsigma/dx.T
+#S_10y  = Eys*S_01y.T #dsigma/dy.T
+		
+# is copying expensive?
+E_dist_mat1 = E_dist_mat.copy()
+np.fill_diagonal(E_dist_mat1, 1)
+Esqrt = np.sqrt(E_dist_mat)
+Esqrt1 = np.sqrt(E_dist_mat1)
 
+S_11xx = Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1 #dsigma/dxdy
+S_11xy = Exdist*Eydist/Esqrt1 #dsigma/dxdy
+S_11yy = Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1 #dsigma/dydy
 
+S_01   = -2*alpha*(S_01x + S_01y)
+S_10   = 2*alpha*(S_10x + S_10y)
+S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy) -4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy)
 
+"""
 
 
 

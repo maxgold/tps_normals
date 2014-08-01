@@ -1,0 +1,7 @@
+TPS-RPM without ground truth data
+python do_task_eval.py --tasks 0 --animation 2 eval --downsample 1 --reg_type bij --search_until_feasible data/actions.h5 data/holdout_set.h5 regcost finger
+
+known correspondences (matching by segments) with ground truth
+python do_task_eval.py --tasks 0 --animation 2 eval --downsample 0 --reg_type segment --search_until_feasible data/actions_resampled.h5 data/holdout_set.h5 regcost finger
+
+python do_task_eval.py --tasks 0 --animation 2 eval --downsample 0 --reg_type normals-bij --search_until_feasible data/actions_resampled.h5 data/holdout_set.h5 regcost finger

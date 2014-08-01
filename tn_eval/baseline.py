@@ -2,7 +2,7 @@ from __future__ import division
 import numpy as np, numpy.linalg as nlg
 import scipy.spatial.distance as ssd
 
-import cvxopt as co, cvxpy as cp
+#import cvxopt as co, cvxpy as cp
 
 #from tn_utils import math_utils
 from tn_rapprentice import tps
