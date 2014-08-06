@@ -171,23 +171,8 @@ def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None):
     f.x_na = x_na
     return f        
 
-def fit_KrigingSplineWeird(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, alpha = 1.5, normal_coef = 1, wt_n=None):
-    """
-    Xs: landmark source cloud
-    Epts: normal point source cloud
-    Exs: normal values
-    y_ng: landmark target cloud
-    ey_ng: target normal point cloud
-    Eys: target normal values
-    wt_n: weight the points
-    """
-    d = Xs.shape[1]
-    f = KrigingSpline(d, alpha)
-    f.w_ng, f.trans_g, f.lin_ag = ku.krig_fit1Weird(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = bend_coef, normal_coef = normal_coef, wt_n = wt_n)
-    f.x_na, f.ex_na, f.exs = Xs, Epts, Exs
-    return f
 
-def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = 1e-6, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5):
+def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5):
     """
     Xs: landmark source cloud
     Epts: normal point source cloud

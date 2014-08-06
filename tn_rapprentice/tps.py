@@ -11,6 +11,8 @@ import scipy.optimize as opt
 from tn_utils.colorize import colorize
 from tn_eval import tps_utils as tu
 
+from tn_rapprentice import krig_utils as ku
+
 
 
 
@@ -105,22 +107,21 @@ def tps_grad(x_ma, lin_ag, _trans_g, w_ng, x_na):
     return grad_mga
 
 def krig_grad(Ys, Epts, E1s, lin_ag, trans_g, w_ng, Xs):
-    Eypts = Ys
     alpha = 1.5
 
     n, d = Xs.shape
     m, _ = Epts.shape
     s, _ = Ys.shape
-    j, _ = Eypts.shape
+    j, _ = Ys.shape
     Y = np.tile(Ys, (1,m)).reshape(s,m,1,d)
     EX = np.tile(Epts, (s, 1)).reshape(s, m, 1, d)
     YEdiff = Y-EX # [[[y_1 - e_1], ..., [y_1 - e_m]], ..., [[y_n - e_1], ..., [y_n - e_m]]]
 
-    EY = np.tile(Eypts, (1,n)).reshape(j,n,1,d)
+    EY = np.tile(Ys, (1,n)).reshape(j,n,1,d)
     X = np.tile(Xs, (j, 1)).reshape(j, n, 1, d)
     EYdiff = EY-X # [[[ey_1 - x_1], ..., [ey_1 - x_n]], ..., [[ey_m - x_1], ..., [ey_m - x_m]]]
     
-    E_xs = np.tile(Eypts, (1,m)).reshape(j, m, 1, d) 
+    E_xs = np.tile(Ys, (1,m)).reshape(j, m, 1, d) 
     E_ys = np.tile(Epts, (j,1)).reshape(j, m, 1, d)
     Ediff = E_xs - E_ys #[[ey1-e1], ..., [ey_1 - e_m], ..., [ey_m-e_1], ..., [ey_m - e_m]]
     
@@ -131,7 +132,7 @@ def krig_grad(Ys, Epts, E1s, lin_ag, trans_g, w_ng, Xs):
     nEY = np.sum(np.abs(EYdiff)**2,axis=-1).reshape(j,n) # squared norm of each element ey_i-x_j of Y-EX #checked
     
     dist_mat = ssd.cdist(Ys, Xs)**2 #squared norm between Xs and Ys
-    E_dist_mat = ssd.cdist(Eypts, Epts)**2  #squared norm between Epts 
+    E_dist_mat = ssd.cdist(Ys, Epts)**2  #squared norm between Epts 
 
     yedist_x = YEdiff[0:, 0:, 0, 0] # difference in x coordinates of y_i and e_j i.e. x_i_x - e_j_x
     Edist_x = Ediff[0:, 0:, 0, 0] # difference in x coordinates of ey_i and e_j i.e. ey_i_x - e_j_x
@@ -145,17 +146,17 @@ def krig_grad(Ys, Epts, E1s, lin_ag, trans_g, w_ng, Xs):
     eydist_z = EYdiff[0:, 0:, 0, 2]## 
 
     nEYsqrt = np.sqrt(nEY)
-    S_10x  = eydist_x*nEYsqrt#dsigma/dx.T
-    S_10y  = eydist_y*nEYsqrt#dsigma/dy.T
-    S_10z  = eydist_z*nEYsqrt#
+    S_10x  = 3*eydist_x*nEYsqrt#dsigma/dx.T
+    S_10y  = 3*eydist_y*nEYsqrt#dsigma/dy.T
+    S_10z  = 3*eydist_z*nEYsqrt#
 
     Esqrt = np.sqrt(E_dist_mat)
-    S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy
-    S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
-    S_11zz = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_z)/Esqrt) #dsigma/dzdz
-    S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
-    S_11yz = nan2zero(Edist_y*Edist_z/Esqrt) #dsigma/dydz
-    S_11xz = nan2zero(Edist_x*Edist_z/Esqrt) #d
+    S_11xx = -3*(Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt)) #dsigma/dxdy
+    S_11yy = -3*(Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt)) #dsigma/dydy
+    S_11zz = -3*(Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_z)/Esqrt)) #dsigma/dzdz
+    S_11xy = -6*nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
+    S_11yz = -6*nan2zero(Edist_y*Edist_z/Esqrt) #dsigma/dydz
+    S_11xz = -6*nan2zero(Edist_x*Edist_z/Esqrt) #d
 
     assert Ys.shape[1] == 3
 

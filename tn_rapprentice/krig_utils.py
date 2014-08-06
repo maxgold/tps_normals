@@ -2,10 +2,34 @@ import numpy as np, numpy.linalg as nlg
 import scipy as sp, scipy.spatial.distance as ssd
 from math import floor
 
-from tn_rapprentice.tps import solve_eqp1, nan2zero
 from tn_eval.tps_utils import find_all_normals_naive
 
+def nan2zero(x):
+    np.putmask(x, np.isnan(x), 0)
+    return x
 
+def solve_eqp1(H, f, A):
+    """solve equality-constrained qp
+    min tr(x'Hx) + sum(f'x)
+    s.t. Ax = 0
+    """    
+    n_vars = H.shape[0]
+    assert H.shape[1] == n_vars
+    assert f.shape[0] == n_vars
+    assert A.shape[1] == n_vars
+    n_cnts = A.shape[0]
+    
+    _u,_s,_vh = np.linalg.svd(A.T)
+    N = _u[:,n_cnts:]
+    # columns of N span the null space
+    
+    # x = Nz
+    # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
+    # NHNz + Nf = 0
+    z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
+    x = N.dot(z)
+    
+    return x
 
 def sigma (alpha, x, y = None):
 	"""
@@ -53,6 +77,7 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 	computes kriging kernel matrix
 	"""
 	assert Xs.shape[1] == Epts.shape[1]
+	assert E1s.shape[0] == Epts.shape[0]
 	n, d = Xs.shape
 	m, _ = Epts.shape
 	X = np.tile(Xs, (1,m)).reshape(n, m, 1, d)
@@ -108,7 +133,7 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 
 		S_01   = S_01x + S_01y
 		S_10   = S_10x + S_10y
-		S_11   = -2*alpha*(Exs.T*Exs.T*S_11xx + Eys.T*Eys.T*S_11yy) -4*alpha*(Exs.T*Eys.T*S_11xy + Eys.T*Exs.T*S_11xy)
+		S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy) -4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy)
 
 		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 
@@ -163,6 +188,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 	E1sr are new normal lengths
 	"""
 	assert Xs.shape[1] == Epts.shape[1]
+	assert E1s.shape[0] == Epts.shape[0]
 	n, d = Xs.shape
 	m, _ = Epts.shape
 	s, _ = Ys.shape
@@ -203,8 +229,8 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		S_00   = dist_mat*dist_mat_sqrt
 		
 		nYEsqrt = np.sqrt(nYE)
-		S_01x  = yedist_x*nYEsqr #dsigma/dx
-		S_01y  = yedist_y*nYEsqr #dsigma/dy
+		S_01x  = yedist_x*nYEsqrt #dsigma/dx
+		S_01y  = yedist_y*nYEsqrt #dsigma/dy
 
 		nEYsqrt = np.sqrt(nEY)
 		S_10x  = eydist_x*nEYsqrt#dsigma/dx.T
@@ -217,7 +243,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 
 		S_01   = Exs.T*S_01x + Eys.T*S_01y
 		S_10   = Exsr.T*S_10x + Eysr.T*S_10y
-		S_11   = -2*alpha*(Exsr.T*Exs.T*S_11xx + Eysr.T*Eys.T*S_11yy) - 4*alpha*(Exsr.T*Eys.T*S_11xy + Eysr.T*Exs.T*S_11xy) 
+		S_11   = -2*alpha*(Exsr.T*Exs*S_11xx + Eysr.T*Eys*S_11yy) - 4*alpha*(Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy) 
 
 		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 
@@ -244,7 +270,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		S_10z  = eydist_z*nEYsqrt#dsigma/dz.T
 		
 		Esqrt = np.sqrt(E_dist_mat)
-		S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy
+		S_11xx = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_x)/Esqrt) #dsigma/dxdy1
 		S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
 		S_11zz = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_z)/Esqrt) #dsigma/dzdz
 		S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
@@ -259,7 +285,6 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 	else:
 		raise NotImplementedError
-
 
 def krig_mat_linear(Xs, Epts, Exs):
 	n, d = Xs.shape
@@ -515,6 +540,11 @@ def derivativey(f, x, epsilon = 1e-6):
 	xpert[:,1] = xpert[:,1] + epsilon
 	return (f(xpert)-f(x))/epsilon
 
+def derivativez(f, x, epsilon = 1e-6):
+	xpert = x.copy()
+	xpert[:,2] += epsilon
+	return (f(xpert) - f(x))/epsilon
+
 def derivativexx(f, x, epsilon = 1e-6):
 	xpert = x.copy()
 	xpert[:,0] = xpert[:,0] + epsilon
@@ -546,10 +576,22 @@ def find_rope_normals(pts1):
 
 	return normals
 
+def find_rope_tangents(pts1):
+	n, d = pts1.shape
+	tangents_2d = np.zeros((n, d-1))
+	pts1_2d = pts1[:,:2]
+	for i in xrange(n-1):
+		tangents_2d[i] = pts1_2d[i+1] - pts1_2d[i-1]
+	#tangents_2d /= nlg.norm(tangents_2d, 1)
+	tangents = np.c_[tangents_2d, np.zeros((n,1))]
+	tangents[n-1] = tangents[n-2]
+	tangents[0] = tangents[1]
+	tangents /= nlg.norm(tangents, axis=1)[:,None]
+	return tangents
+
 
 
 """
-Derivative testing
 
 n,dim = Xs.shape
 m,d  = Exs.shape
@@ -696,10 +738,9 @@ S_01x  = Exs*xedist*nXsqrt # dsigma/dx
 S_01y  = Eys*yedist*nXsqrt # dsigma/dy
 
 nEXsqrt = np.sqrt(nEX)
-S_10x  = Exs*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
-S_10y  = Eys*exdist_y*nEXsqrt#dsigma/dy.T
-#S_10x  = Exs*S_01x.T#dsigma/dx.T
-#S_10y  = Eys*S_01y.T #dsigma/dy.T
+S_10x  = 3*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
+S_10y  = 3*exdist_y*nEXsqrt#dsigma/dy.T
+
 		
 # is copying expensive?
 E_dist_mat1 = E_dist_mat.copy()

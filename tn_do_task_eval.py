@@ -28,8 +28,11 @@ import hashlib
 
 from tn_rapprentice import registration as tn_registration
 from tn_eval.tps_utils import find_all_normals_naive
-from tn_rapprentice.krig_utils import find_rope_normals
+from tn_rapprentice.krig_utils import find_rope_normals, find_rope_tangents
 from tn_rapprentice import krig_utils as ku
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 COLLISION_DIST_THRESHOLD = 0.0
 MAX_ACTIONS_TO_TRY = 10 # Number of actions to try (ranked by cost), if TrajOpt trajectory is infeasible
@@ -119,8 +122,8 @@ def register_tps_normals(sim_env, state, action, args_eval, interest_pts = None,
     elif args_eval.reg_type == 'rpm':
         #exs = find_all_normals_naive(old_cloud[:, :3], windowsize, flip_away=True)
         #eys = find_all_normals_naive(new_cloud[:,:3], windowsize, flip_away=True)
-        exs = find_rope_normals(old_cloud[:, :3])
-        eys = find_rope_normals(new_cloud[:, :3])
+        exs = find_rope_tangents(old_cloud[:, :3])
+        eys = find_rope_tangents(new_cloud[:, :3])
         x_weights = np.ones(len(old_cloud)) * 1.0/len(old_cloud)
 
         # change to krig if feasible
@@ -200,48 +203,48 @@ def register_tps_normals_cheap(sim_env, state, action, args_eval):
     new_cloud = state[1]
     windowsize = args_eval.windowsize
     normal_coef = args_eval.normal_coef
-    if args_eval.reg_type == 'segment':
-        old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
-        old_rope_nodes_hash = hashlib.sha1(old_rope_nodes).hexdigest()
-        if action not in GlobalVars.rope_nodes_crossing_info:
-            if action not in GlobalVars.actions_cache:
-                action_group = GlobalVars.actions_cache.create_group(action)
-            else:
-                action_group = GlobalVars.actions_cache[action]
-            if old_rope_nodes_hash not in action_group:
-                action_rope_nodes_group = action_group.create_group(old_rope_nodes_hash)
-                crossings, crossings_links_inds, cross_pairs, rope_closed = calculateCrossings(old_rope_nodes)
-                action_rope_nodes_group['rope_nodes'] = old_rope_nodes
-                if crossings: action_rope_nodes_group['crossings'] = crossings
-                if crossings_links_inds: action_rope_nodes_group['crossings_links_inds'] = crossings_links_inds
-                if cross_pairs: action_rope_nodes_group['cross_pairs'] = list(cross_pairs)
-                action_rope_nodes_group['rope_closed'] = rope_closed
-            else:
-                action_rope_nodes_group = action_group[old_rope_nodes_hash]
-                assert np.all(old_rope_nodes == action_rope_nodes_group['rope_nodes'][()])
-                crossings = action_rope_nodes_group['crossings'][()] if 'crossings' in action_rope_nodes_group else []
-                crossings_links_inds = action_rope_nodes_group['crossings_links_inds'][()] if 'crossings_links_inds' in action_rope_nodes_group else []
-                cross_pairs = set([tuple(p) for p in action_rope_nodes_group['cross_pairs']]) if 'cross_pairs' in action_rope_nodes_group else set([])
-                rope_closed = action_rope_nodes_group['rope_closed'][()]
-            GlobalVars.rope_nodes_crossing_info[action] = (old_rope_nodes, crossings, crossings_links_inds, cross_pairs, rope_closed)
-        state_id, new_cloud, new_rope_nodes = state
-        if state_id not in GlobalVars.rope_nodes_crossing_info:
-            crossings, crossings_links_inds, cross_pairs, rope_closed = calculateCrossings(new_rope_nodes)
-            GlobalVars.rope_nodes_crossing_info[state_id] = (new_rope_nodes, crossings, crossings_links_inds, cross_pairs, rope_closed)
-        def plot_cb(rope_nodes0, rope_nodes1, corr_nm, f, pts_segmentation_inds0, pts_segmentation_inds1):
-            from rapprentice.plotting_plt import plot_tps_registration_segment_proj_2d
-            import matplotlib.pyplot as plt
-            # change to krig?
-            plot_tps_registration_segment_proj_2d(rope_nodes0, rope_nodes1, corr_nm, f, pts_segmentation_inds0, pts_segmentation_inds1)
-            plt.show()
-        x_weights = np.ones(len(old_cloud)) * 1.0/len(old_cloud)
-        # change to krig?
-        f, corr = tps_registration.tps_segment_registration(GlobalVars.rope_nodes_crossing_info[action], GlobalVars.rope_nodes_crossing_info[state_id],
-                                                            cloud0 = old_cloud, cloud1 = new_cloud, corr_tile_pattern = np.eye(args_eval.upsample_rad),
-                                                            reg=np.array([0.00015, 0.00015, 0.0015]), x_weights=x_weights, plotting=False, plot_cb=plot_cb)
-        return f, corr
+    #if args_eval.reg_type == 'segment':
+    old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
+    old_rope_nodes_hash = hashlib.sha1(old_rope_nodes).hexdigest()
+    old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
+    old_rope_nodes_hash = hashlib.sha1(old_rope_nodes).hexdigest()
+    #if action not in GlobalVars.rope_nodes_crossing_info:
+    if action not in GlobalVars.actions_cache:
+        action_group = GlobalVars.actions_cache.create_group(action)
+    else:
+        action_group = GlobalVars.actions_cache[action]
+    if old_rope_nodes_hash not in action_group:
+        action_rope_nodes_group = action_group.create_group(old_rope_nodes_hash)
+        crossings, crossings_links_inds, cross_pairs, rope_closed = calculateCrossings(old_rope_nodes)
+        action_rope_nodes_group['rope_nodes'] = old_rope_nodes
+        if crossings: action_rope_nodes_group['crossings'] = crossings
+        if crossings_links_inds: action_rope_nodes_group['crossings_links_inds'] = crossings_links_inds
+        if cross_pairs: action_rope_nodes_group['cross_pairs'] = list(cross_pairs)
+        action_rope_nodes_group['rope_closed'] = rope_closed
+    else:
+        action_rope_nodes_group = action_group[old_rope_nodes_hash]
+        assert np.all(old_rope_nodes == action_rope_nodes_group['rope_nodes'][()])
+        crossings = action_rope_nodes_group['crossings'][()] if 'crossings' in action_rope_nodes_group else []
+        crossings_links_inds = action_rope_nodes_group['crossings_links_inds'][()] if 'crossings_links_inds' in action_rope_nodes_group else []
+        cross_pairs = set([tuple(p) for p in action_rope_nodes_group['cross_pairs']]) if 'cross_pairs' in action_rope_nodes_group else set([])
+        rope_closed = action_rope_nodes_group['rope_closed'][()]
+    GlobalVars.rope_nodes_crossing_info[action] = (old_rope_nodes, crossings, crossings_links_inds, cross_pairs, rope_closed)
+    state_id, new_cloud, new_rope_nodes = state
+    if state_id not in GlobalVars.rope_nodes_crossing_info:
+        crossings, crossings_links_inds, cross_pairs, rope_closed = calculateCrossings(new_rope_nodes)
+        GlobalVars.rope_nodes_crossing_info[state_id] = (new_rope_nodes, crossings, crossings_links_inds, cross_pairs, rope_closed)
+    def plot_cb(rope_nodes0, rope_nodes1, corr_nm, f, pts_segmentation_inds0, pts_segmentation_inds1):
+        from rapprentice.plotting_plt import plot_tps_registration_segment_proj_2d
+        import matplotlib.pyplot as plt
+        plot_tps_registration_segment_proj_2d(rope_nodes0, rope_nodes1, corr_nm, f, pts_segmentation_inds0, pts_segmentation_inds1)
+        plt.show()
+    x_weights = np.ones(len(old_cloud)) * 1.0/len(old_cloud)
+    f, corr = tps_registration.tps_segment_registration(GlobalVars.rope_nodes_crossing_info[action], GlobalVars.rope_nodes_crossing_info[state_id],
+                                                        cloud0 = old_cloud, cloud1 = new_cloud, corr_tile_pattern = np.eye(args_eval.upsample_rad),
+                                                        reg=np.array([0.00015, 0.00015, 0.0015]), x_weights=x_weights, plotting=False, plot_cb=plot_cb)
 
-    elif args_eval.reg_type == 'rpm':
+    return f, corr
+    """elif args_eval.reg_type == 'rpm':
         #change to krig
         #exs = find_all_normals_naive(old_cloud[:,:3], windowsize, flip_away=True)
         #eys = find_all_normals_naive(new_cloud[:,:3], windowsize, flip_away=True)
@@ -308,8 +311,8 @@ def register_tps_normals_cheap(sim_env, state, action, args_eval):
         f = tn_registration.fit_KrigingSpline(x_nd, x_nd, exs, y_mg, eys, bend_coef = .1, normal_coef = normal_coef)
         print "computing krig spline"
         return f
-
     
+    """
 
     
 def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval, transferopt=None, animate=False, interactive=False, simulate=True, replay_full_trajs=None):
@@ -370,8 +373,9 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
         _, new_cloud, new_rope_nodes = state
         new_cloud = new_cloud[:,:cloud_dim]
         #new_normals = find_all_normals_naive(new_cloud, windowsize, flip_away=True)
-        new_normals = find_rope_normals(new_cloud)
+        new_normals = find_rope_tangents(new_cloud)
         print "computing normals"
+        
     
         handles = []
         if animate:
@@ -402,40 +406,55 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
 
                 #change to krig
                 if args_eval.reg_type != 'fit_normal':
-                    f, corr = register_tps_normals(sim_env, state, action, args_eval)
-                    if f is None: break
+                    old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
+                    x_weights = np.ones(len(old_cloud)) * 1.0/len(old_cloud)
+                    _, corr = tps_registration.tps_segment_registration(old_rope_nodes, new_rope_nodes,
+                                                        cloud0 = old_cloud, cloud1 = new_cloud, corr_tile_pattern = np.eye(args_eval.upsample_rad),
+                                                        reg=np.array([0.00015, 0.00015, 0.0015]), x_weights=x_weights, plotting=False)
 
-                    if animate:
-                        handles.append(sim_env.env.plot3(f.transform_points(old_cloud[:,:3]), 2, old_cloud[:,3:] if args_eval.use_color else (1,1,0)))
-                        new_cloud_rs = corr.dot(new_cloud)
-                        handles.append(sim_env.env.plot3(new_cloud_rs[:,:3], 2, new_cloud_rs[:,3:] if args_eval.use_color else (0,1,0)))
-                        handles.extend(draw_grid(sim_env, old_cloud[:,:3], f))
+                    bend_coef = .01
+                    rot_coef = 1e-5
+                    wt_n = x_weights.copy()
+
+                    if corr is None:
+                        success = True
+                        break
+                    #ipy.embed()
+
+                    x_na = old_cloud
+                    y_ng = (corr/corr.sum(axis=1)[:,None]).dot(new_cloud)
+
+                    xtangents = find_rope_tangents(x_na)
+                    ytangents = find_rope_tangents(y_ng)
+
+                    znormals = np.zeros((x_na.shape))
+                    znormals[:,2] = np.ones((x_na.shape[0]))
                     
                     interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
                     if lr in closing_hmats:
                         interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats[lr][:3,3]) < 0.05
 
-                    x_na = old_cloud
-                    y_ng = (corr/corr.sum(axis=1)[:,None]).dot(new_cloud)
-                    bend_coef = f._bend_coef
-                    rot_coef = f._rot_coef
-                    wt_n = f._wt_n.copy()
-
-                    print repr(old_cloud)
-        
-                    #this only works if correspondences are known, same with tps_rpm_normals. Need to make more general
-                    exs = find_rope_normals(x_na[interest_pts_inds])
-                    eys = find_rope_normals(y_ng[interest_pts_inds])
-                    
-                    f = tn_registration.fit_KrigingSpline(x_na, x_na[interest_pts_inds], exs, y_ng, eys)
-                    print "weird"
-
-                    #ipy.embed()
 
                     interest_pts_err_tol = 0.0025
                     max_iters = 5 if transferopt != "pose" else 0
                     penalty_factor = 10.0
+
+                    Epts = np.r_[x_na[interest_pts_inds], x_na[interest_pts_inds] + 1e-15]
+                    exs = np.r_[xtangents[interest_pts_inds], znormals[interest_pts_inds]]
+                    eys = np.r_[ytangents[interest_pts_inds], znormals[interest_pts_inds]]
+                    #Epts = x_na
+                    #exs = znormals
+                    #eys = znormals
+                    #Epts = x_na
+                    #exs = xtangents
+                    #eys = ytangents
+
+                    wt_n[interest_pts_inds] *= 100
+                    wt_nn = np.r_[wt_n, x_weights[interest_pts_inds], x_weights[interest_pts_inds]]
                     
+                    f = tn_registration.fit_KrigingSpline(x_na, Epts, exs, y_ng, eys, bend_coef = bend_coef, normal_coef = normal_coef, wt_n = wt_nn)
+
+                    """
                     if np.any(interest_pts_inds):
                         for _ in range(max_iters):
                             interest_pts_errs = np.apply_along_axis(np.linalg.norm, 1, (f.transform_points(x_na[interest_pts_inds,:]) - y_ng[interest_pts_inds,:])) #add normal cost
@@ -444,63 +463,31 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                             redprint("TPS fitting: The error of the interest points is above the tolerance. Increasing penalty for these weights.")
                             wt_n[interest_pts_inds] *= penalty_factor
                             # change to krig
-                            wt_nn = np.r_[wt_n, wt_n[interest_pts_inds]]
-                            f = tn_registration.fit_KrigingSpline(x_na, x_na[interest_pts_inds], exs, y_ng, eys, bend_coef = bend_coef, wt_n=wt_nn, normal_coef=normal_coef)
-                
-
-                else:
-                    f = register_tps_normals(sim_env, state, action, args_eval)
-
+                            #wt_nn = np.r_[wt_n, wt_n]
+                            wt_nn = np.r_[wt_n, x_weights, x_weights]
+                            f = tn_registration.fit_KrigingSpline(x_na, Epts, exs, y_ng, eys, bend_coef = .1, wt_n=wt_nn, normal_coef=normal_coef)
+                    """   
+                        
                     if animate:
-                        handles.append(sim_env.env.plot3(f.transform_points(old_cloud[:,:3]), 2, old_cloud[:,3:] if args_eval.use_color else (1,1,0)))
-                        new_cloud_rs = new_cloud
-                        handles.append(sim_env.env.plot3(new_cloud_rs[:,:3], 2, new_cloud_rs[:,3:] if args_eval.use_color else (0,1,0)))
-                        handles.extend(draw_grid(sim_env, old_cloud[:,:3], f))
-                    
-                    interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
-                    if lr in closing_hmats:
-                        interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats[lr][:3,3]) < 0.05
-
-                    x_na = old_cloud[:n-1]
-                    y_ng = new_cloud
-
-                    #this only works if correspondences are known, same with tps_rpm_normals. Need to make more general
-                    exs = find_rope_normals(x_na)
-                    eys = find_rope_normals(y_ng)
-
-                    bend_coef = .1 
-                    rot_coef = 1e-5
-                    wt_n = np.ones((n-1, 1))/(n-1)
-
-                    interest_pts_err_tol = 0.0025
-                    max_iters = 5 if transferopt != "pose" else 0
-                    penalty_factor = 10.0
-
-                    print interest_pts_inds
-                    
-                    if np.any(interest_pts_inds):
-                        for _ in range(max_iters):
-                            interest_pts_errs = np.apply_along_axis(np.linalg.norm, 1, (f.transform_points(x_na[interest_pts_inds,:]) - y_ng[interest_pts_inds,:]))
-                            if np.all(interest_pts_errs < interest_pts_err_tol):
-                                break
-                            redprint("TPS fitting: The error of the interest points is above the tolerance. Increasing penalty for these weights.")
-                            wt_n[interest_pts_inds] *= penalty_factor
-                            # change to krig
-                            wt_nn = np.r_[wt_n, wt_n]
-                            f = tn_registration.fit_KrigingSpline(x_na, x_na, exs, y_ng, eys, bend_coef = .1, normal_coef=normal_coef)
-
+                            handles.append(sim_env.env.plot3(f.transform_points(old_cloud[:,:3]), 2, old_cloud[:,3:] if args_eval.use_color else (1,1,0)))
+                            new_cloud_rs = corr.dot(new_cloud)
+                            handles.append(sim_env.env.plot3(new_cloud_rs[:,:3], 2, new_cloud_rs[:,3:] if args_eval.use_color else (0,1,0)))
+                            handles.extend(draw_grid(sim_env, old_cloud[:,:3], f))
                 
 
                 old_ee_traj = asarray(seg_info["%s_gripper_tool_frame"%lr]['hmat'][i_start - int(i_start > 0):i_end+1])
-                # add transform_hmats to krig
                 transformed_ee_traj = f.transform_hmats(old_ee_traj)
                 transformed_ee_traj_rs = np.asarray(resampling.interp_hmats(timesteps_rs, np.arange(len(transformed_ee_traj)), transformed_ee_traj))
                  
+                
+
                 if animate:
                     handles.append(sim_env.env.drawlinestrip(old_ee_traj[:,:3,3], 2, (1,0,0)))
                     handles.append(sim_env.env.drawlinestrip(transformed_ee_traj[:,:3,3], 2, (1,1,0)))
                     handles.append(sim_env.env.drawlinestrip(transformed_ee_traj_rs[:,:3,3], 2, (0,1,0)))
                     sim_env.viewer.Step()
+
+                #ipy.embed()
                 
                 print "planning pose trajectory following"
                 dof_inds = sim_util.dof_inds_from_name(sim_env.robot, manip_name)
@@ -525,6 +512,9 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                         flr2finger_link[finger_lr] = sim_env.robot.GetLink("%s_gripper_%s_finger_tip_link"%(lr,finger_lr))
                         flr2finger_rel_pts[finger_lr] = sim_util.get_finger_rel_pts(finger_lr)
                     
+                    #ipy.embed()
+                    #sim_env.viewer.Idle()
+
                     if animate:
                         handles.extend(draw_finger_pts_traj(sim_env, flr2old_finger_pts_traj_rs, (1,0,0)))
                         handles.extend(draw_finger_pts_traj(sim_env, flr2transformed_finger_pts_traj_rs, (0,1,0)))
@@ -589,6 +579,8 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                         #change to krig
                         obj_value += alpha * planning.krig_obj(f, x_na, y_ng, exs, eys, bend_coef, rot_coef, wt_n)
                     
+                    #ipy.embed()
+
                     if animate:
                         flr2new_transformed_finger_pts_traj_rs = {}
                         for finger_lr in 'lr':
@@ -748,6 +740,7 @@ def eval_on_holdout(args, sim_env):
         prune_feature_fn = select_feature_fn('regcost', args.eval)
     holdoutfile = h5py.File(args.eval.holdoutfile, 'r')
     holdout_items = eval_util.get_holdout_items(holdoutfile, args.tasks, args.taskfile, args.i_start, args.i_end)
+    ipy.embed()
 
     num_successes = 0
     num_total = 0
@@ -784,7 +777,7 @@ def eval_on_holdout(args, sim_env):
                     break
                 redprint("TRYING %s"%agenda[i_choice][1])
 
-                time_machine.restore_from_checkpoint('prechoice_%i'%i_step, sim_env, sim_util.get_rope_params(args.eval.rope_params))
+                #time_machine.restore_from_checkpoint('prechoice_%i'%i_step, sim_env, sim_util.get_rope_params(args.eval.rope_params))
                 best_root_action = agenda[i_choice][1]
                 start_time = time.time()
                 pre_trans, pre_rots = sim_util.get_rope_transforms(sim_env)
@@ -1000,8 +993,13 @@ def load_simulation(args, sim_env):
         sim_env.env.Load("data/bookshelves.env.xml")
         obstacle_bodies.extend(sim_env.env.GetBodies()[-1:])
     if 'boxes' in args.eval.obstacles:
-        sim_env.env.LoadData(sim_util.make_box_xml("box0", [.7,.43,table_height+(.01+.12)], [.12,.12,.12]))
-        sim_env.env.LoadData(sim_util.make_box_xml("box1", [.74,.47,table_height+(.01+.12*2+.08)], [.08,.08,.08]))
+        #sim_env.env.LoadData(sim_util.make_box_xml("box0", [.7,.43,table_height+(.01+.12)], [.12,.12,.12]))
+        z = table_height+0.2
+        sim_env.env.LoadData(sim_util.make_box_xml("box0", [0.9,0,z], [0.05,0.05,0.05]))
+        sim_env.env.LoadData(sim_util.make_box_xml("box1", [1.1,0,z], [0.05,0.05,0.05]))
+        sim_env.env.LoadData(sim_util.make_box_xml("box2", [1,.1,z], [0.15,0.05,0.05]))
+        sim_env.env.LoadData(sim_util.make_box_xml("box3", [1,-.1,z], [0.15,0.05,0.05]))
+        #sim_env.env.LoadData(sim_util.make_box_xml("box1", [.74,.47,table_height+(.01+.12*2+.08)], [.08,.08,.08]))
         obstacle_bodies.extend(sim_env.env.GetBodies()[-2:])
     if 'cylinders' in args.eval.obstacles:
         sim_env.env.LoadData(sim_util.make_cylinder_xml("cylinder0", [.7,.43,table_height+(.01+.5)], .12, 1.))

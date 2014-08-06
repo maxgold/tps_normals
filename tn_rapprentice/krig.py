@@ -24,7 +24,7 @@ def transform_normals1(alpha, Xs, Epts, Exs, Eypts, Eys, w_ng, lin_ag):
 	transforms the normlas of the kriging function
 	can only evaluate at Epts for now
 	"""
-	n, d = Eypts.shape
+	n, d = Xs.shape
 
 	S = ku.krig_kernel_mat2(alpha, Xs, Epts, Exs, Eys, Xs, Eypts)	
 	D = ku.krig_mat_linear(Xs, Eypts, Eys)
