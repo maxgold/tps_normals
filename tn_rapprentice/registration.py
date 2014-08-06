@@ -950,6 +950,65 @@ def tps_rpm_normals_interest(x_nd, y_md, exs, eys,  Epts = None, n_iter = 20, re
 
 
 
+def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, reg_final=.001, rad_init=.1, rad_final=.001, rad_init = .1, rad_final = .005, normal_weight = 1, alpha = 1.5,
+                    normal_coef = 1, rot_reg = 1e-5):
+    n, d = Xs.shape
+    regs = loglinspace(reg_init, reg_final, n_iter)
+    rads = loglinspace(rad_init, rad_final, n_iter)
+
+    if Epts is None:
+        Epts = Xs
+
+    f = fit_KrigingSpline(Xs, Epts, Exs, Xs, Exs)
+
+    for i in xrange(n_iter):
+        xwarped = f.transform_points(Xs)
+        ewarped = f.transform_normals(Xs, Exs)
+        r = rads[i]
+
+        flipped_es = -ewarped
+
+        distmat = ssd.cdist(xwarped, Ys, 'euclidean')
+        distmat_nn = ssd.cdist(ewarped, Eys, 'euclidean')
+        distmat_fn = ssd.cdist(flipped_es, Eys, 'euclidean')
+        distmat_n = np.minimum(distmat_nn, distmat_fn)
+
+        dist_xy = distmat + distmat_n
+        prob = np.exp(-dist_nm/(2*r))
+        corr = balance_matrix(prob_nm, .1)
+        corr += 1e-9
+
+        wt_n = corr.sum(axis=1)
+
+        xtarg = (corr/wt_n[:,None]).dot(Ys)
+        etarg = (corr/wt_n[:,None]).dot(Eys)
+        etarg /= nlg.norm(etarg, axis=1)[:,None]
+
+        Epts_p, Exs_p, etarg_p, wt_n = close_to_perp(Epts, Exs, etarg, Eys, wt_n, angle) #checks if normals are close to perpendicular and deletes them if they are
+
+        f = fit_KrigingSpline(Xs, Epts_p, Exs_p, xtarg, etarg_p, bend_coef = regs[i], wt_n = wt_n, normal_coef = normal_coef)
+    
+    f._corr = corr
+    f._bend_coef = bend_coef
+    f._rot_coef = rot_reg
+    f._wt_n = wt_n
+
+    return f, corr
+
+def close_to_perp(Epts, Exs, etarg, Eys, wt_n, angle):
+    thresh = np.cos(90 - angle)
+    Eptsn, Exsn, Eysn = [], [], []
+    for i in Exs:
+        if not np.dot(Exs[i], Eys[i]) < thresh:
+            Eptsn, Exsn, Eysn = np.r_[Eptsn, Epts[i]], np.r_[Exsn, Exs[i]], np.r_[Eysn, Eys[i]]
+            wt_n = np.r_[wt_n, wt_n[i]]
+    return Eptsn, Exsn, Eysn, wt_n
+
+
+
+
+
+
 
 def main():
     from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in

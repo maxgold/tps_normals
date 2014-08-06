@@ -320,8 +320,97 @@ def bending_energynormal(S,D, dim):
 	#return np.r_[np.c_[S, D], np.c_[D.T, np.zeros((dim+1, dim+1))]]
 	return S
 
-#@profile
-def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None, rot_coefs = 1e-5):
+def solve_eqp1_interest(H, f, A, b):
+    """solve equality-constrained qp
+    min tr(x'Hx) + sum(f'x)
+    s.t. Ax = b
+    """    
+    n_vars = H.shape[0]
+    assert H.shape[1] == n_vars
+    assert f.shape[0] == n_vars
+    assert A.shape[1] == n_vars
+    n_cnts = A.shape[0]
+    
+    _u,_s,_vh = np.linalg.svd(A.T)
+    N = _u[:,n_cnts:]
+    P = nlg.pinv(A)
+    # columns of N span the null space
+    
+    # x = Nz
+    # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
+    # NHNz + Nf = 0
+    z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
+    x = P.dot(b) + N.dot(z)
+    
+    return x
+
+def bool_to_list(b):
+	"""
+	b is a list of booleans
+	"""
+	a = []
+	for i in range(len(b)):
+		if b[i]:
+			a.append(i)
+	return a
+
+def remove_inds(arr, inds):
+	narr = []
+	for i in range(len(arr)):
+		if not i in inds:
+			narr.append(arr[i])
+	return narr
+
+def remove_bool_inds(arr, bool_inds):
+	_,d = arr.shape
+	narr = []
+	for i in range(len(arr)):
+		if not bool_inds[i]:
+			narr = np.r_[narr, arr[i]]
+	return narr.reshape(len(narr)/d, d)
+
+
+def krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, wt_n = None, rot_coefs = 1e-5, interest_pts_inds = None):
+	assert Xs.shape[1] == Exs.shape[1]
+	assert Xs.shape[1] == Ys.shape[1]
+	assert Exs.shape[0] == Eys.shape[0]
+
+	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
+	D = krig_mat_linear(Xs, Epts, Exs)
+	B = bending_energynormal(S, D, dim)
+	#delete interest_pts_inds from S, D, and B (or maybe not B)
+	Y = np.r_[Ys, Eys]
+
+	#write with numpy
+	S1 = remove_bool_inds(S, interest_pts_inds)
+	D1 = remove_bool_inds(D, interest_pts_inds)
+	B1 = remove_bool_inds(B, interest_pts_inds)
+
+	n, _ = S1.shape
+	_,dim = Xs.shape
+	m,_ = Xs[interest_pts_inds].shape
+
+	if wt_n is None: wt_n = np.ones(n)/n
+	wt_n[n-m:]*=normal_coef
+	#rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
+
+	Q = np.c_[S1, D1]
+	WQ = wt_n[:,None]*Q
+	H = Q.T.dot(WQ)
+	H[:n+m, :n+m] += bend_coef*B1
+	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
+	f = -WQ.T.dot(Y)
+	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
+
+	A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds], D[interest_pts_inds]]]
+	b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds], Eys1[interest_pts_inds]]]
+
+	Theta = solve_eqp1_interest(H, f, A, b)
+
+	return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
+
+
+def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, wt_n = None, rot_coefs = 1e-5):
 	# This uses euclidean difference for normals. Change it to angle difference?
 
 	assert Xs.shape[1] == Exs.shape[1]
