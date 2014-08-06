@@ -334,81 +334,74 @@ def solve_eqp1_interest(H, f, A, b):
     _u,_s,_vh = np.linalg.svd(A.T)
     N = _u[:,n_cnts:]
     P = nlg.pinv(A)
+    Pb = P.dot(b)
     # columns of N span the null space
+
+    nf = -(f + H.dot(Pb))
     
     # x = Nz
     # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
     # NHNz + Nf = 0
-    z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
+    z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f) - N.T.dot(H).dot(Pb))
     x = P.dot(b) + N.dot(z)
     
     return x
-
-def bool_to_list(b):
-	"""
-	b is a list of booleans
-	"""
-	a = []
-	for i in range(len(b)):
-		if b[i]:
-			a.append(i)
-	return a
-
-def remove_inds(arr, inds):
-	narr = []
-	for i in range(len(arr)):
-		if not i in inds:
-			narr.append(arr[i])
-	return narr
-
-def remove_bool_inds(arr, bool_inds):
-	_,d = arr.shape
-	narr = []
-	for i in range(len(arr)):
-		if not bool_inds[i]:
-			narr = np.r_[narr, arr[i]]
-	return narr.reshape(len(narr)/d, d)
-
 
 def krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, wt_n = None, rot_coefs = 1e-5, interest_pts_inds = None):
 	assert Xs.shape[1] == Exs.shape[1]
 	assert Xs.shape[1] == Ys.shape[1]
 	assert Exs.shape[0] == Eys.shape[0]
 
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear(Xs, Epts, Exs)
-	B = bending_energynormal(S, D, dim)
-	#delete interest_pts_inds from S, D, and B (or maybe not B)
-	Y = np.r_[Ys, Eys]
-
-	#write with numpy
-	S1 = remove_bool_inds(S, interest_pts_inds)
-	D1 = remove_bool_inds(D, interest_pts_inds)
-	B1 = remove_bool_inds(B, interest_pts_inds)
-
-	n, _ = S1.shape
+	alpha = 1.5
 	_,dim = Xs.shape
-	m,_ = Xs[interest_pts_inds].shape
 
+	n = Xs.shape[0] + Exs.shape[0]
+	if interest_pts_inds is not None:
+		m,_ =Exs.shape
+	else:
+		m, _ = Exs.shape
 	if wt_n is None: wt_n = np.ones(n)/n
-	wt_n[n-m:]*=normal_coef
+	wt_n[-m:]*=normal_coef
 	#rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
 
-	Q = np.c_[S1, D1]
+	Y = np.r_[Ys, Eys]
+
+	Xs1 = remove_bool_inds(Xs, interest_pts_inds)
+	Ys1 = remove_bool_inds(Ys, interest_pts_inds)
+	Epts1 = remove_bool_inds(Epts, interest_pts_inds)
+	Exs1 = remove_bool_inds(Exs, interest_pts_inds)
+	Eys1 = remove_bool_inds(Eys, interest_pts_inds)
+
+	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
+	D = krig_mat_linear(Xs, Epts, Exs)
+	#delete interest_pts_inds from S, D, and B (or maybe not B)
+
+	Q = np.c_[S, D]
 	WQ = wt_n[:,None]*Q
 	H = Q.T.dot(WQ)
-	H[:n+m, :n+m] += bend_coef*B1
+	H[:n, :n] += bend_coef*S
 	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
 	f = -WQ.T.dot(Y)
 	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
 
-	A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds], D[interest_pts_inds]]]
-	b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds], Eys1[interest_pts_inds]]]
+	interest_pts_inds2 = np.r_[interest_pts_inds, interest_pts_inds]
 
+	if interest_pts_inds is not None:
+		A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds2], D[interest_pts_inds2]]]
+		b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds], Eys[interest_pts_inds]]]
+		import IPython
+		IPython.embed()
+	else:
+		A = np.c_[D.T, np.zeros((dim+1, dim+1))]
+		b = np.zeros((dim+1, dim))
+	
+	#import IPython
+	#IPython.embed()
+	
 	Theta = solve_eqp1_interest(H, f, A, b)
-
-	return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
-
+	
+	return Theta[:n], Theta[n], Theta[n+1:]
+	#return Theta
 
 def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, wt_n = None, rot_coefs = 1e-5):
 	# This uses euclidean difference for normals. Change it to angle difference?
@@ -845,16 +838,71 @@ S_01   = -2*alpha*(S_01x + S_01y)
 S_10   = 2*alpha*(S_10x + S_10y)
 S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy) -4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy)
 
+
+
+
+
+alpha = 1.5
+_,dim = Xs.shape
+
+wt_n = None
+
+normal_coef = 1
+
+
+n = Xs.shape[0] + Exs.shape[0]
+
+m,_ =Exs.shape
+
+if wt_n is None: wt_n = np.ones(n)/n
+wt_n[-m:]*=normal_coef
+	#rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
+
+Y = np.r_[Ys, Eys]
+
+S = krig_kernel_mat(alpha, Xs, Epts, Exs)
+D = krig_mat_linear(Xs, Epts, Exs)
+	#delete interest_pts_inds from S, D, and B (or maybe not B)
+
+K = np.r_[np.c_[S,D], np.c_[D.T, np.zeros((dim+1,dim+1))]]
+targ = np.r_[Ys, Eys, np.zeros((4,3))]
+
+Q = np.c_[S, D]
+WQ = wt_n[:,None]*Q
+H = Q.T.dot(WQ)
+H[:n, :n] += bend_coef*S
+	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
+f = -WQ.T.dot(Y)
+	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
+
+interest_pts_inds2 = np.r_[interest_pts_inds, interest_pts_inds]
+
+
+A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds2], D[interest_pts_inds2]]]
+b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds], Eys[interest_pts_inds]]]
+n_vars = H.shape[0]
+assert H.shape[1] == n_vars
+assert f.shape[0] == n_vars
+assert A.shape[1] == n_vars
+n_cnts = A.shape[0]
+    
+_u,_s,_vh = np.linalg.svd(A.T)
+N = _u[:,n_cnts:]
+P = nlg.pinv(A)
+
+Pb = P.dot(b)
+nf = f + Pb
+    # columns of N span the null space
+    
+    # x = Nz
+    # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
+    # NHNz + Nf = 0
+z1 = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
+z2 = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f) - N.T.dot(H).dot(Pb))
+x = P.dot(b) + N.dot(z)
+	
+Theta = solve_eqp1_interest(H, f, A, b)
+
 """
-
-
-
-
-
-
-
-
-
-
 
 

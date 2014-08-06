@@ -172,7 +172,8 @@ def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None):
     return f        
 
 
-def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5):
+def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .01, normal_coef = 1, wt_n=None, alpha = 1.5, 
+                    rot_coefs = 1e-5, interest_pts_inds = None):
     """
     Xs: landmark source cloud
     Epts: normal point source cloud
@@ -184,7 +185,8 @@ def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_coef = 1, w
     """
     d = Xs.shape[1]
     f = KrigingSpline(d, alpha)
-    f.w_ng, f.trans_g, f.lin_ag = ku.krig_fit1Normal(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = bend_coef, normal_coef = normal_coef, wt_n = wt_n, rot_coefs = rot_coefs)
+    f.w_ng, f.trans_g, f.lin_ag = ku.krig_fit_interest(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = bend_coef, 
+                                    normal_coef = normal_coef, wt_n = wt_n, rot_coefs = rot_coefs, interest_pts_inds = interest_pts_inds)
     f.x_na, f.ex_na, f.exs = Xs, Epts, Exs
     return f
 
@@ -950,7 +952,7 @@ def tps_rpm_normals_interest(x_nd, y_md, exs, eys,  Epts = None, n_iter = 20, re
 
 
 
-def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, reg_final=.001, rad_init=.1, rad_final=.001, rad_init = .1, rad_final = .005, normal_weight = 1, alpha = 1.5,
+def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, reg_final=.001, rad_init=.1, rad_final=.001,  normal_weight = 1, alpha = 1.5,
                     normal_coef = 1, rot_reg = 1e-5):
     n, d = Xs.shape
     regs = loglinspace(reg_init, reg_final, n_iter)
@@ -968,7 +970,7 @@ def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, re
 
         flipped_es = -ewarped
 
-        distmat = ssd.cdist(xwarped, Ys, 'euclidean')
+        distmat = ssd.cdist(xwarped, Ys, 'sqeuclidean')
         distmat_nn = ssd.cdist(ewarped, Eys, 'euclidean')
         distmat_fn = ssd.cdist(flipped_es, Eys, 'euclidean')
         distmat_n = np.minimum(distmat_nn, distmat_fn)
@@ -995,11 +997,11 @@ def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, re
 
     return f, corr
 
-def close_to_perp(Epts, Exs, etarg, Eys, wt_n, angle):
-    thresh = np.cos(90 - angle)
+def close_to_perp(Epts, Exs, etarg, Eys, wt_n, perp_angle):
+    perp_thresh = np.cos(90 - angle)
     Eptsn, Exsn, Eysn = [], [], []
     for i in Exs:
-        if not np.dot(Exs[i], Eys[i]) < thresh:
+        if not np.dot(Exs[i], Eys[i]) < perp_thresh:
             Eptsn, Exsn, Eysn = np.r_[Eptsn, Epts[i]], np.r_[Exsn, Exs[i]], np.r_[Eysn, Eys[i]]
             wt_n = np.r_[wt_n, wt_n[i]]
     return Eptsn, Exsn, Eysn, wt_n
