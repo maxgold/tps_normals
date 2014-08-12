@@ -140,10 +140,13 @@ def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
     
     return nm
 
-def find_all_normals_naive (pcloud, wsize=0.02, flip_away=False, project_lower_dim=False):
+def find_all_normals_naive (dspcloud, wsize=0.02, flip_away=False, project_lower_dim=False, pcloud = None):
     """
-    Find normals at all the points.
+    Find normals at all the points of the downsampled point cloud, dspcloud, in the original point cloud, pcloud.
     """
+    if pcloud is None:
+        pcloud = dspcloud
+
     if project_lower_dim:
         dim = pcloud.shape[1]
         pmean = pcloud.sum(axis=0)/pcloud.shape[0]
@@ -155,7 +158,7 @@ def find_all_normals_naive (pcloud, wsize=0.02, flip_away=False, project_lower_d
 
     
     normals = np.zeros([0,pcloud.shape[1]])
-    for pt in pcloud:
+    for pt in dspcloud:
         nm = find_normal_naive(pcloud,pt,wsize,flip_away)
         normals = np.r_[normals,np.atleast_2d(nm)]
     return normals

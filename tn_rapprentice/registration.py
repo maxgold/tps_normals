@@ -172,8 +172,7 @@ def fit_ThinPlateSpline(x_na, y_ng, bend_coef=.1, rot_coef = 1e-5, wt_n=None):
     return f        
 
 
-def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .01, normal_coef = 1, wt_n=None, alpha = 1.5, 
-                    rot_coefs = 1e-5, interest_pts_inds = None):
+def fit_KrigingSpline_Interest(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5, interest_pts_inds = None):
     """
     Xs: landmark source cloud
     Epts: normal point source cloud
@@ -185,11 +184,25 @@ def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .01, normal_coef = 1, 
     """
     d = Xs.shape[1]
     f = KrigingSpline(d, alpha)
-    f.w_ng, f.trans_g, f.lin_ag = ku.krig_fit_interest(f.alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = bend_coef, 
-                                    normal_coef = normal_coef, wt_n = wt_n, rot_coefs = rot_coefs, interest_pts_inds = interest_pts_inds)
+    f.w_ng, f.trans_g, f.lin_ag = ku.krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = bend_coef, normal_coef = normal_coef, wt_n = wt_n, rot_coefs = rot_coefs, interest_pts_inds = interest_pts_inds)
     f.x_na, f.ex_na, f.exs = Xs, Epts, Exs
     return f
 
+def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5, interest_pts_inds = None):
+    """
+    Xs: landmark source cloud
+    Epts: normal point source cloud
+    Exs: normal values
+    y_ng: landmark target cloud
+    ey_ng: target normal point cloud
+    Eys: target normal values
+    wt_n: weight the points
+    """
+    d = Xs.shape[1]
+    f = KrigingSpline(d, alpha)
+    f.w_ng, f.trans_g, f.lin_ag = ku.krig_fit1Normal(1.5, Xs, Ys, Epts, Exs, Eys, bend_coef = bend_coef, normal_coef = normal_coef, wt_n = wt_n, rot_coefs = rot_coefs)
+    f.x_na, f.ex_na, f.exs = Xs, Epts, Exs
+    return f
 
 def fit_KrigingSplineLandmark(Xs, Ys, bend_coef = 1e-6, alpha = 1.5, wt_n=None):
     """
@@ -970,7 +983,7 @@ def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, re
 
         flipped_es = -ewarped
 
-        distmat = ssd.cdist(xwarped, Ys, 'sqeuclidean')
+        distmat = ssd.cdist(xwarped, Ys, 'euclidean')
         distmat_nn = ssd.cdist(ewarped, Eys, 'euclidean')
         distmat_fn = ssd.cdist(flipped_es, Eys, 'euclidean')
         distmat_n = np.minimum(distmat_nn, distmat_fn)

@@ -163,12 +163,12 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 		Esqrt = np.sqrt(E_dist_mat)
 		Esqrt1 = np.sqrt(E_dist_mat1)
 		
-		S_11xx = Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1 #dsigma/dxdy
-		S_11yy = Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1 #dsigma/dydy
-		S_11zz = Esqrt + 2*(alpha-1)*np.square(Ezdist)/Esqrt1 #dsigma/dzdz
-		S_11xy = Exdist*Eydist/Esqrt1 #dsigma/dxdy
-		S_11yz = Eydist*Ezdist/Esqrt1 #dsigma/dydz
-		S_11xz = Exdist*Ezdist/Esqrt1 #dsigma/dxdz
+		S_11xx = nan2zero(Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1) #dsigma/dxdy
+		S_11yy = nan2zero(Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1) #dsigma/dydy
+		S_11zz = nan2zero(Esqrt + 2*(alpha-1)*np.square(Ezdist)/Esqrt1) #dsigma/dzdz
+		S_11xy = nan2zero(Exdist*Eydist/Esqrt1) #dsigma/dxdy
+		S_11yz = nan2zero(Eydist*Ezdist/Esqrt1) #dsigma/dydz
+		S_11xz = nan2zero(Exdist*Ezdist/Esqrt1) #dsigma/dxdz
 
 		S_01   = Exs*S_01x + Eys*S_01y + Ezs*S_01z
 		S_10   = Exs.T*S_10x + Eys.T*S_10y + Ezs.T*S_10z
@@ -241,7 +241,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		S_11xy = nan2zero(Edist_x*Edist_y/Esqrt) #dsigma/dxdy
 		S_11yy = Esqrt + 2*(alpha-1)*nan2zero(np.square(Edist_y)/Esqrt) #dsigma/dydy
 
-		S_01   = Exs.T*S_01x + Eys.T*S_01y
+		S_01   = Exs*S_01x + Eys*S_01y
 		S_10   = Exsr.T*S_10x + Eysr.T*S_10y
 		S_11   = -2*alpha*(Exsr.T*Exs*S_11xx + Eysr.T*Eys*S_11yy) - 4*alpha*(Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy) 
 
@@ -325,12 +325,15 @@ def solve_eqp1_interest(H, f, A, b):
     min tr(x'Hx) + sum(f'x)
     s.t. Ax = b
     """    
+
     n_vars = H.shape[0]
     assert H.shape[1] == n_vars
     assert f.shape[0] == n_vars
     assert A.shape[1] == n_vars
     n_cnts = A.shape[0]
     
+    import IPython
+    #IPython.embed()
     _u,_s,_vh = np.linalg.svd(A.T)
     N = _u[:,n_cnts:]
     P = nlg.pinv(A)
@@ -353,24 +356,14 @@ def krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, 
 	assert Exs.shape[0] == Eys.shape[0]
 
 	alpha = 1.5
-	_,dim = Xs.shape
+	n, dim = Xs.shape
 
-	n = Xs.shape[0] + Exs.shape[0]
-	if interest_pts_inds is not None:
-		m,_ =Exs.shape
-	else:
-		m, _ = Exs.shape
-	if wt_n is None: wt_n = np.ones(n)/n
+	m = Exs.shape[0]
+	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
 	wt_n[-m:]*=normal_coef
 	#rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
 
 	Y = np.r_[Ys, Eys]
-
-	Xs1 = remove_bool_inds(Xs, interest_pts_inds)
-	Ys1 = remove_bool_inds(Ys, interest_pts_inds)
-	Epts1 = remove_bool_inds(Epts, interest_pts_inds)
-	Exs1 = remove_bool_inds(Exs, interest_pts_inds)
-	Eys1 = remove_bool_inds(Eys, interest_pts_inds)
 
 	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
 	D = krig_mat_linear(Xs, Epts, Exs)
@@ -379,18 +372,19 @@ def krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, 
 	Q = np.c_[S, D]
 	WQ = wt_n[:,None]*Q
 	H = Q.T.dot(WQ)
-	H[:n, :n] += bend_coef*S
+	H[:n+m, :n+m] += bend_coef*S
 	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
 	f = -WQ.T.dot(Y)
 	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
 
-	interest_pts_inds2 = np.r_[interest_pts_inds, interest_pts_inds]
+	interest_pts_inds1 = interest_pts_inds[:n]
+	interest_pts_inds2 = interest_pts_inds[n:]
 
 	if interest_pts_inds is not None:
-		A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds2], D[interest_pts_inds2]]]
-		b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds], Eys[interest_pts_inds]]]
+		A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds], D[interest_pts_inds]]]
 		import IPython
-		IPython.embed()
+		#IPython.embed()
+		b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds1], Eys[interest_pts_inds2]]]
 	else:
 		A = np.c_[D.T, np.zeros((dim+1, dim+1))]
 		b = np.zeros((dim+1, dim))
@@ -400,7 +394,7 @@ def krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, 
 	
 	Theta = solve_eqp1_interest(H, f, A, b)
 	
-	return Theta[:n], Theta[n], Theta[n+1:]
+	return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
 	#return Theta
 
 def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, wt_n = None, rot_coefs = 1e-5):
