@@ -30,8 +30,6 @@ from tn_rapprentice import registration as tn_registration
 from tn_eval.tps_utils import find_all_normals_naive
 from tn_rapprentice.krig_utils import find_rope_normals, find_rope_tangents
 from tn_rapprentice import krig_utils as ku
-from tn_eval import tps_utils
-from tn_rapprentice.registration import tps_rpm_curvature_prior1
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -67,7 +65,6 @@ def get_action_cloud_ds(sim_env, action, args_eval):
 
 def get_action_rope_nodes(sim_env, action, args_eval):
     rope_nodes = GlobalVars.actions[action]['cloud_xyz'][()]
-
     return ropesim.observe_cloud(rope_nodes, sim_env.sim.rope_params.radius, upsample=args_eval.upsample)
 
 def color_cloud(xyz, endpoint_inds, endpoint_color = np.array([0,0,1]), non_endpoint_color = np.array([1,0,0])):
@@ -106,7 +103,7 @@ def draw_finger_pts_traj(sim_env, flr2finger_pts_traj, color):
 def register_tps(sim_env, state, action, args_eval, interest_pts = None, closing_hmats = None, closing_finger_pts = None):
     old_cloud = get_action_cloud_ds(sim_env, action, args_eval)
     new_cloud = state[1]
-    if args_eval.reg_type == 'segment' or 'segment-normal':
+    if args_eval.reg_type == 'segment':
         old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
         state_id, new_cloud, new_rope_nodes = state
         def plot_cb(rope_nodes0, rope_nodes1, cloud0, cloud1, corr_nm, corr_nm_aug, f, pts_segmentation_inds0, pts_segmentation_inds1):
@@ -222,7 +219,6 @@ def register_tps(sim_env, state, action, args_eval, interest_pts = None, closing
         f._wt_n = wt_n
     return f, corr
 
-
 def register_tps_cheap(sim_env, state, action, args_eval):
     old_cloud = get_action_cloud_ds(sim_env, action, args_eval)
     new_cloud = state[1]
@@ -263,92 +259,6 @@ def register_tps_cheap(sim_env, state, action, args_eval):
         f, corr = tps_registration.tps_segment_registration(GlobalVars.rope_nodes_crossing_info[action], GlobalVars.rope_nodes_crossing_info[state_id], 
                                                             cloud0 = old_cloud, cloud1 = new_cloud, corr_tile_pattern = np.eye(args_eval.upsample_rad), 
                                                             reg=np.array([0.00015, 0.00015, 0.0015]), x_weights=x_weights, plotting=False, plot_cb=plot_cb)
-        
-        #ipy.embed()
-    elif args_eval.reg_type == 'segment-normal':
-        old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
-        old_rope_nodes_hash = hashlib.sha1(old_rope_nodes).hexdigest()
-        if action not in GlobalVars.rope_nodes_crossing_info:
-            if action not in GlobalVars.actions_cache:
-                action_group = GlobalVars.actions_cache.create_group(action)
-            else:
-                action_group = GlobalVars.actions_cache[action]
-            if old_rope_nodes_hash not in action_group:
-                action_rope_nodes_group = action_group.create_group(old_rope_nodes_hash)
-                crossings, crossings_links_inds, cross_pairs, rope_closed = calculateCrossings(old_rope_nodes)
-                action_rope_nodes_group['rope_nodes'] = old_rope_nodes
-                if crossings: action_rope_nodes_group['crossings'] = crossings
-                if crossings_links_inds: action_rope_nodes_group['crossings_links_inds'] = crossings_links_inds
-                if cross_pairs: action_rope_nodes_group['cross_pairs'] = list(cross_pairs)
-                action_rope_nodes_group['rope_closed'] = rope_closed
-            else:
-                action_rope_nodes_group = action_group[old_rope_nodes_hash]
-                assert np.all(old_rope_nodes == action_rope_nodes_group['rope_nodes'][()])
-                crossings =  action_rope_nodes_group['crossings'][()] if 'crossings' in action_rope_nodes_group else []
-                crossings_links_inds = action_rope_nodes_group['crossings_links_inds'][()] if 'crossings_links_inds' in action_rope_nodes_group else []
-                cross_pairs = set([tuple(p) for p in action_rope_nodes_group['cross_pairs']]) if 'cross_pairs' in action_rope_nodes_group else set([])
-                rope_closed = action_rope_nodes_group['rope_closed'][()]
-            GlobalVars.rope_nodes_crossing_info[action] = (old_rope_nodes, crossings, crossings_links_inds, cross_pairs, rope_closed)
-        state_id, new_cloud, new_rope_nodes = state
-        if state_id not in GlobalVars.rope_nodes_crossing_info:
-            crossings, crossings_links_inds, cross_pairs, rope_closed = calculateCrossings(new_rope_nodes)
-            GlobalVars.rope_nodes_crossing_info[state_id] = (new_rope_nodes, crossings, crossings_links_inds, cross_pairs, rope_closed)
-        def plot_cb(rope_nodes0, rope_nodes1, corr_nm, f, pts_segmentation_inds0, pts_segmentation_inds1):
-            from rapprentice.plotting_plt import plot_tps_registration_segment_proj_2d
-            import matplotlib.pyplot as plt
-            plot_tps_registration_segment_proj_2d(rope_nodes0, rope_nodes1, corr_nm, f, pts_segmentation_inds0, pts_segmentation_inds1)
-            plt.show()
-        x_weights = np.ones(len(old_cloud)) * 1.0/len(old_cloud)
-        _, corr = tps_registration.tps_segment_registration(GlobalVars.rope_nodes_crossing_info[action], GlobalVars.rope_nodes_crossing_info[state_id], 
-                                                            cloud0 = old_cloud, cloud1 = new_cloud, corr_tile_pattern = np.eye(args_eval.upsample_rad), 
-                                                            reg=np.array([0.00015, 0.00015, 0.0015]), x_weights=x_weights, plotting=False, plot_cb=plot_cb)
-        
-        #ipy.embed()
-        if corr is not None:
-            seg_info = GlobalVars.actions[action]
-
-            closing_inds = get_closing_inds(seg_info)
-            closing_hmats = {}
-            for lr in closing_inds:
-                if closing_inds[lr] != -1:
-                    closing_hmats[lr] = seg_info["%s_gripper_tool_frame"%lr]['hmat'][closing_inds[lr]]
-
-
-            interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
-            
-            try:
-                interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats['l'][:3,3]) < 0.05
-            except:
-                print None #'I need to figure out how to use try without except'
-
-            try: 
-                interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats['r'][:3,3]) < 0.05
-            except:
-                print None #'I need to figure out how to use try without except'
-
-            #ipy.embed()
-
-            x_na = old_cloud
-            y_ng = corr.dot(new_cloud)
-            xtangents = find_rope_tangents(x_na)
-            ytangents = find_rope_tangents(y_ng)
-            xnormals = xtangents.copy()
-            ynormals = ytangents.copy()
-            xnormals[:,0], xnormals[:,1] = -xnormals[:,1], xnormals[:,0]
-            ynormals[:,0], ynormals[:,1] = -ynormals[:,1], ynormals[:,0]
-
-            #Epts = np.r_[x_na, x_na]
-            #exs = np.r_[xtangents, xnormals]
-            #eys = np.r_[ytangents, ynormals]
-            Epts = x_na[interest_pts_inds]
-            exs = xnormals[interest_pts_inds]
-            eys = ynormals[interest_pts_inds]
-
-            normal_coef = args_eval.normal_coef
-
-            f = tn_registration.fit_KrigingSpline(x_na, Epts, exs, y_ng, eys, bend_coef = .1, normal_coef = normal_coef)
-        else:
-            f = None
     elif args_eval.reg_type == 'rpm':
         vis_cost_xy = tps_registration.ab_cost(old_cloud, new_cloud) if args_eval.use_color else None
         f, corr = tps_registration.tps_rpm(old_cloud[:,:3], new_cloud[:,:3], n_iter=14, em_iter=1, vis_cost_xy=vis_cost_xy, user_data={'old_cloud':old_cloud, 'new_cloud':new_cloud})
@@ -360,25 +270,6 @@ def register_tps_cheap(sim_env, state, action, args_eval):
         scaled_y_md, targ_params = registration.unit_boxify(y_md)
         f,g = registration.tps_rpm_bij(scaled_x_nd, scaled_y_md, rot_reg=1e-3, n_iter=10, vis_cost_xy=vis_cost_xy)
         corr = f._corr
-    elif args_eval.reg_type == 'curve-rpm':
-        
-        EM_iter = 1
-        beta = 2e1 #20 works for 90 rotation
-        wsize = .1
-        T_init = .04
-        T_final = .00004
-        bend_init = 1 # 1e2 works for 90 rotation
-        bend_final = .001
-
-        wsize = args_eval.wsize
-        x_nd = old_cloud[:, :3]
-        big_old_cloud = GlobalVars.actions[action]['old_cloud_xyz'][()]
-        y_md = new_cloud[:, :3]
-        big_new_cloud, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)    
-        np.set_printoptions(threshold=np.nan)
-        ipy.embed()
-
-        f , corr = tn_registration.tps_rpm_curvature_prior1(x_nd, y_md, orig_source = big_old_cloud, orig_target = big_new_cloud, n_iter = 14, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta)
     return f, corr
 
     
@@ -398,7 +289,6 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
     
     cloud_dim = 6 if args_eval.use_color else 3
     old_cloud = get_action_cloud_ds(sim_env, action, args_eval)[:,:cloud_dim]
-    big_old_cloud = GlobalVars.actions[action]['old_cloud_xyz'][()]
     old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
     n, d = old_cloud.shape
 
@@ -433,7 +323,7 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
     full_trajs = []
     obj_values = []
     for i_miniseg_group, miniseg_interval_group in enumerate(miniseg_interval_groups):
-        
+        #ipy.embed()
         if type(state_or_get_state_fn) == tuple:
             state = state_or_get_state_fn
         else:
@@ -441,9 +331,9 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
         if state is None: break
         _, new_cloud, new_rope_nodes = state
         new_cloud = new_cloud[:,:cloud_dim]
-        big_new_cloud, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)        
-        
-
+        #new_normals = find_all_normals_naive(new_cloud, windowsize, flip_away=True)
+        new_normals = find_rope_tangents(new_cloud)        
+    
         handles = []
         if animate:
             # color code: r demo, y transformed, g transformed resampled, b new
@@ -462,7 +352,6 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                 
                 # figure out how we're gonna resample stuff
                 old_arm_traj = asarray(seg_info[manip_name][i_start - int(i_start > 0):i_end+1])
-                #ipy.embed()
                 if not sim_util.arm_moved(old_arm_traj):
                     continue
                 old_finger_traj = sim_util.gripper_joint2gripper_l_finger_joint_values(seg_info['%s_gripper_joint'%lr][i_start - int(i_start > 0):i_end+1])[:,None]
@@ -472,30 +361,32 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                 ### Generate fullbody traj
                 old_arm_traj_rs = mu.interp2d(timesteps_rs, np.arange(len(old_arm_traj)), old_arm_traj)
 
+                #change to krig
                 old_rope_nodes = get_action_rope_nodes(sim_env, action, args_eval)
                 x_weights = np.ones(len(old_cloud)) * 1.0/len(old_cloud)
+                #_, corr = tps_registration.tps_segment_registration(old_rope_nodes, new_rope_nodes,
+                #                                    cloud0 = old_cloud, cloud1 = new_cloud, corr_tile_pattern = np.eye(args_eval.upsample_rad),
+                #                                    reg=np.array([0.00015, 0.00015, 0.0015]), x_weights=x_weights, plotting=False)
 
-                #ipy.embed()
+                f, corr = register_tps(sim_env, state, action, args_eval)
 
-                _, corr = register_tps(sim_env, state, action, args_eval)
-
-                bend_coef = args_eval.bend_coef
+                bend_coef = 0.1
                 rot_coef = 1e-5
-                wsize = args_eval.wsize
-                pld = args_eval.pld
                 wt_n = x_weights.copy()
 
                 if corr is None:
                     success = True
                     break
-                
+                #ipy.embed()
 
                 x_na = old_cloud
                 y_ng = (corr/corr.sum(axis=1)[:,None]).dot(new_cloud)
 
-                #xtangents = find_rope_tangents(x_na)
-                #ytangents = find_rope_tangents(y_ng)
-                
+                xtangents = find_rope_tangents(x_na)
+                ytangents = find_rope_tangents(y_ng)
+
+                znormals = np.zeros((x_na.shape))
+                znormals[:,2] = np.ones((x_na.shape[0]))
                 
                 interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
                 radius = 5e-4
@@ -508,68 +399,53 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                 if np.any(interest_pts_inds):
                     assert len(x_na[interest_pts_inds]) == 1
 
-                interest_pts_tangents = np.zeros((len(x_na)), dtype=bool)
+                interest_pts_tangents = np.zeros((len(xtangents)), dtype=bool)
                 if lr in closing_hmats:
                     interest_pts_tangents += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats[lr][:3, 3]) < .05
-                
+    
+
+                Epts = np.r_[x_na, x_na]
+                exs = np.r_[xtangents, znormals]
+                eys = np.r_[ytangents, znormals]
                 #ipy.embed()
-                # need to upsample for pld to work on big_old_cloud
-                #source_normals = find_all_normals_naive(old_cloud[interest_pts_tangents], big_old_cloud, wsize = wsize, project_lower_dim = pld)
-                source_normals = find_all_normals_naive(old_cloud[interest_pts_tangents][:, :2], big_old_cloud[:,:2], wsize = wsize, project_lower_dim = False)
-                source_normals = np.c_[source_normals, np.zeros(len(source_normals))]
-                target_normals = find_all_normals_naive(y_ng[interest_pts_tangents], big_new_cloud, wsize = wsize, project_lower_dim = pld)
-                
-                wt_n = x_weights.copy()
-                #### flip_normals might be weird
-                target_normals = tps_utils.flip_normals(x_na, x_na[interest_pts_tangents], source_normals, y_ng, target_normals, bend_coef = .1)
-                znormals = np.zeros((x_na[interest_pts_tangents].shape))
-                znormals[:,2] = np.ones((x_na[interest_pts_tangents].shape[0]))
-
-                Epts = np.r_[x_na[interest_pts_tangents], x_na[interest_pts_tangents]]
-                exs = np.r_[source_normals, znormals]
-                eys = np.r_[target_normals, znormals]
-
-                
-                interest_pts_inds1 = np.r_[interest_pts_inds, np.zeros(2*len(x_na[interest_pts_tangents]), dtype=bool)] 
-
-                wt_nt = wt_n.copy()
-
-                wt_nt[interest_pts_inds] *= 1
-                wt_nn = np.r_[wt_n, wt_nt[interest_pts_tangents], wt_nt[interest_pts_tangents]]
-
-                interest_pts_for_loop = interest_pts_inds[interest_pts_tangents]
-                #xnormal = xtangents[interest_pts_inds].copy()
-                #xnormal[:,1], xnormal[:,0] = xnormal[:,0], -xnormal[:,1]
-                #ynormal = ytangents[interest_pts_inds].copy()
-                #ynormal[:,1], ynormal[:,0] = ynormal[:,0], -ynormal[:,1]                
-                #exs[interest_pts_inds] = xnormal
-                #eys[interest_pts_inds] = ynormal
-                
+                interest_pts_inds1 = np.r_[interest_pts_inds, interest_pts_inds, interest_pts_inds]
+                #Epts = x_na
+                #exs = znormals
+                #eys = znormals
+                #Epts = x_na
+                #exs = xtangents
+                #eys = ytangents
+                #interest_pts_inds = np.r_[interest_pts_inds, interest_pts_inds]
+                #increase size of interest points
+                wt_n1 = wt_n.copy()
+                wt_n1[interest_pts_tangents] *= 1
+                wt_nn = np.r_[wt_n, wt_n1, wt_n]
+                f = tn_registration.fit_KrigingSpline(x_na, Epts, exs, y_ng, eys, bend_coef = bend_coef, normal_coef = normal_coef)
+                #f = tn_registration.fit_ThinPlateSpline(x_na, y_ng, bend_coef = bend_coef)
                 #ipy.embed()
-
-                f = tn_registration.fit_KrigingSpline_Interest(x_na, Epts, exs, y_ng, eys, bend_coef = bend_coef, normal_coef = normal_coef, interest_pts_inds = interest_pts_inds1, wt_n = wt_nn)
-
+                g = tn_registration.fit_KrigingSpline(x_na, Epts, exs, y_ng, eys, bend_coef = bend_coef, normal_coef = normal_coef)
+                xweights1 = xweights.copy()
                 
+                interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
+                if lr in closing_hmats:
+                    interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats[lr][:3,3]) < 0.05
                 if np.any(interest_pts_inds):
                     for _ in range(5):
-                        #ipy.embed()
-                        interest_pts_errs = tps_utils.angle_difference(f.transform_normals(x_na[interest_pts_for_loop,:], exs[interest_pts_for_loop, :]), eys[interest_pts_for_loop,:].T)
-                        print interest_pts_errs
-                        if interest_pts_errs < 30:
+                        interest_pts_errs = np.apply_along_axis(np.linalg.norm, 1, (f.transform_points(x_na[interest_pts_inds,:]) - y_ng[interest_pts_inds,:]))
+                        if np.all(interest_pts_errs < .0025):
                             break
-                        redprint("TPS fitting: Gripper is approaching from bad angle. Increasing penalty for these weights.")
-                        wt_nt[interest_pts_inds] += .1
-                        wt_nn = np.r_[wt_n, wt_nt[interest_pts_tangents], wt_nt[interest_pts_tangents]]
-                        f = tn_registration.fit_KrigingSpline_Interest(x_na, Epts, exs, y_ng, eys, bend_coef = bend_coef, normal_coef = normal_coef, interest_pts_inds = interest_pts_inds1, wt_n = wt_nn)
-                   
+                        redprint("TPS fitting: The error of the interest points is above the tolerance. Increasing penalty for these weights.")
+                        x_weights[interest_pts_inds] *= 10
+                        wt_n = np.r_[x_weights, x_weights, x_weights]
+                        f = tn_registration.fit_KrigingSpline(x_na, Epts, exs, y_ng, eys, bend_coef = bend_coef, wt_n= wt_n)
+                #ipy.embed()  
                 
                 if animate:
-                    handles.append(sim_env.env.plot3(f.transform_points(old_cloud[:,:3]), 2, old_cloud[:,3:] if args_eval.use_color else (1,1,0)))
-                    new_cloud_rs = corr.dot(new_cloud)
-                    handles.append(sim_env.env.plot3(new_cloud_rs[:,:3], 2, new_cloud_rs[:,3:] if args_eval.use_color else (0,1,0)))
-                    handles.extend(draw_grid(sim_env, old_cloud[:,:3], f))
-                    sim_env.viewer.Step()
-                    #ipy.embed()
+                        handles.append(sim_env.env.plot3(f.transform_points(old_cloud[:,:3]), 2, old_cloud[:,3:] if args_eval.use_color else (1,1,0)))
+                        new_cloud_rs = corr.dot(new_cloud)
+                        handles.append(sim_env.env.plot3(new_cloud_rs[:,:3], 2, new_cloud_rs[:,3:] if args_eval.use_color else (0,1,0)))
+                        handles.extend(draw_grid(sim_env, old_cloud[:,:3], f))
+            
 
                 old_ee_traj = asarray(seg_info["%s_gripper_tool_frame"%lr]['hmat'][i_start - int(i_start > 0):i_end+1])
                 transformed_ee_traj = f.transform_hmats(old_ee_traj)
@@ -634,7 +510,7 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                             handles.extend(draw_finger_pts_traj(sim_env, flr2old_finger_pts_closing_traj_rs, (1,0,0)))
                             handles.extend(draw_finger_pts_traj(sim_env, flr2transformed_finger_pts_closing_traj_rs, (0,1,0)))
                             #ipy.embed()
-                            #sim_env.viewer.Idle()
+                            sim_env.viewer.Idle()
 
                             sim_env.viewer.Step()
                     else:
@@ -671,8 +547,7 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                         """
                     else:
                         #change to krig
-                        #ipy.embed()
-                        obj_value += alpha * planning.krig_obj(f, x_na, y_ng, exs, eys, Epts, bend_coef, rot_coef, wt_nn)
+                        obj_value += alpha * planning.krig_obj(f, x_na, y_ng, exs, eys, bend_coef, rot_coef, wt_n)
                         #obj_value += alpha * planning.tps_obj(f, x_na, y_ng, bend_coef, rot_coef, wt_n)
 
                     if animate:
@@ -752,59 +627,16 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
 #change to krig
 def regcost_feature_fn(sim_env, state, action, args_eval):
     # change to krig
-    f, corr = register_tps_cheap(sim_env, state, action, args_eval)
-
+    if args_eval.reg_type != 'fit_normal':
+        f, corr = register_tps_cheap(sim_env, state, action, args_eval)
+    else:
+        f = register_tps_normals_cheap(sim_env, state, action, args_eval)
     if f is None:
         cost = np.inf
     else:
         # change to krig
-        if args_eval.reg_type == 'segment-normal': 
-            #ipy.embed()
-            seg_info = GlobalVars.actions[action]
-
-            closing_inds = get_closing_inds(seg_info)
-            closing_hmats = {}
-            for lr in closing_inds:
-                if closing_inds[lr] != -1:
-                    closing_hmats[lr] = seg_info["%s_gripper_tool_frame"%lr]['hmat'][closing_inds[lr]]
-
-            old_cloud = get_action_cloud_ds(sim_env, action, args_eval)
-            new_cloud = state[1]
-            interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
-            
-            try:
-                interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats['l'][:3,3]) < 0.05
-            except:
-                print None #'I need to figure out how to use try without except'
-
-            try: 
-                interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats['r'][:3,3]) < 0.05
-            except:
-                print None #'I need to figure out how to use try without except'
-
-            
-            x_na = old_cloud
-            y_ng = corr.dot(new_cloud)
-            xtangents = find_rope_tangents(x_na)
-            ytangents = find_rope_tangents(y_ng)
-            xnormals = xtangents.copy()
-            ynormals = ytangents.copy()
-            xnormals[:,0], xnormals[:,1] = -xnormals[:,1], xnormals[:,0]
-            ynormals[:,0], ynormals[:,1] = -ynormals[:,1], ynormals[:,0]
-
-            #Epts = np.r_[x_na, x_na]
-            #exs = np.r_[xtangents, xnormals]
-            #eys = np.r_[ytangents, ynormals]
-            Epts = x_na[interest_pts_inds]
-            exs = xnormals[interest_pts_inds]
-            eys = ynormals[interest_pts_inds]
-
-            normal_coef = args_eval.normal_coef
-            weights = np.ones(((len(x_na)+len(exs)), 1))
-            weights[len(x_na):] *= 1
-            cost = planning.krig_obj(f, x_na, y_ng, exs, eys, Epts, 5, 1e-5, weights)
-        else: 
-            cost = registration.tps_reg_cost(f)
+        #cost = tn_registration.krig_reg_cost(f)
+        cost = registration.tps_reg_cost(f)
     return np.array([float(cost)]) # no need to normalize since bending cost is independent of number of points
 
 def regcost_trajopt_feature_fn(sim_env, state, action, args_eval):
@@ -853,7 +685,6 @@ def select_best_action(sim_env, state, num_actions_to_try, feature_fn, prune_fea
     print "Choosing an action"
     num_top_actions = max(num_actions_to_try, TRAJOPT_MAX_ACTIONS)
 
-    #ipy.embed()
     start_time = time.time()
     q_values_prune = [(q_value_fn(state, action, sim_env, prune_feature_fn), action) for action in GlobalVars.actions]
     agenda_top_actions = sorted(q_values_prune, key = lambda v: -v[0])[:num_top_actions]
@@ -907,10 +738,8 @@ def eval_on_holdout(args, sim_env):
             num_actions_to_try = MAX_ACTIONS_TO_TRY if args.eval.search_until_feasible else 1
             eval_stats = eval_util.EvalStats()
 
-            try:
-                agenda, q_values_root = select_best_action(sim_env, state, num_actions_to_try, feature_fn, prune_feature_fn, eval_stats, args.eval.warpingcost)
-            except:
-                print 'something weird with segment'
+            #important ?
+            agenda, q_values_root = select_best_action(sim_env, state, num_actions_to_try, feature_fn, prune_feature_fn, eval_stats, args.eval.warpingcost)
 
             time_machine.set_checkpoint('prechoice_%i'%i_step, sim_env)
             for i_choice in range(num_actions_to_try):
@@ -923,20 +752,19 @@ def eval_on_holdout(args, sim_env):
                 start_time = time.time()
                 pre_trans, pre_rots = sim_util.get_rope_transforms(sim_env)
                 #important ?
-                #try:
-                #ipy.embed()
-                eval_stats.success, eval_stats.feasible, eval_stats.misgrasp, full_trajs = compute_trans_traj(sim_env, get_state_fn, best_root_action, i_step, args.eval, animate=args.animation, interactive=args.interactive)
-                trans, rots = sim_util.get_rope_transforms(sim_env)
-                eval_stats.exec_elapsed_time += time.time() - start_time
+                try:
+                    eval_stats.success, eval_stats.feasible, eval_stats.misgrasp, full_trajs = compute_trans_traj(sim_env, get_state_fn, best_root_action, i_step, args.eval, animate=args.animation, interactive=args.interactive)
+                    trans, rots = sim_util.get_rope_transforms(sim_env)
+                    eval_stats.exec_elapsed_time += time.time() - start_time
 
-                if eval_stats.feasible: # try next action if TrajOpt cannot find feasible action
-                     eval_stats.found_feasible_action = True
-                     break
-                else:
-                 redprint('TRYING NEXT ACTION')
+                    if eval_stats.feasible: # try next action if TrajOpt cannot find feasible action
+                         eval_stats.found_feasible_action = True
+                         break
+                    else:
+                     redprint('TRYING NEXT ACTION')
 
-                #except:
-                redprint('something wrong in compute trans traj')
+                except:
+                    redprint('norm-error probably')
                 
             if not eval_stats.feasible: # If not feasible, restore_from_checkpoint
                 time_machine.restore_from_checkpoint('prechoice_%i'%i_step, sim_env, sim_util.get_rope_params(args.eval.rope_params))
@@ -960,7 +788,7 @@ def eval_on_holdout(args, sim_env):
 
 
         redprint('Eval Successes / Total: ' + str(num_successes) + '/' + str(num_total))
-        print failures
+    print failures
 
 def replay_on_holdout(args, sim_env):
     holdoutfile = h5py.File(args.eval.holdoutfile, 'r')
@@ -1073,7 +901,7 @@ def parse_input_args():
 
     parser_eval.add_argument('warpingcost', type=str, choices=['regcost', 'regcost-trajopt', 'jointopt'])
     parser_eval.add_argument("transferopt", type=str, choices=['pose', 'finger', 'joint'])
-    parser_eval.add_argument("--reg_type", type=str, choices=['segment', 'rpm', 'bij', 'segment-normal', 'curve-rpm'], default='segment')
+    parser_eval.add_argument("--reg_type", type=str, choices=['segment', 'rpm', 'bij', 'fit_normal'], default='segment')
     
     parser_eval.add_argument("--obstacles", type=str, nargs='*', choices=['bookshelve', 'boxes', 'cylinders'], default=[])
     parser_eval.add_argument("--raycast", type=int, default=0, help="use raycast or rope nodes observation model")
@@ -1096,10 +924,6 @@ def parse_input_args():
     parser_eval.add_argument("--rope_params", type=str, default='default')
     parser_eval.add_argument("--windowsize", type=float, default=".15", help = "window size to compute normals")
     parser_eval.add_argument("--normal_coef", type=float, default = ".5", help = "normal_coef to compute KrigingSpline")
-    parser_eval.add_argument("--bend_coef", type=float, default = ".1", help = "bend_coef to compute KrigingSpline")
-    parser_eval.add_argument("--wsize", type=float, default = ".05", help = "wsize to compute normals")
-    parser_eval.add_argument("--pld", type=bool, default = "False", help = "if True, does PCA to project points into lower dimension (useful for 2d objects e.g. rope")
-
 
     parser_replay = subparsers.add_parser('replay')
     parser_replay.add_argument("loadresultfile", type=str)
@@ -1139,9 +963,7 @@ def load_simulation(args, sim_env):
     
     init_rope_xyz, _ = sim_util.load_fake_data_segment(sim_env, actions, args.eval.fake_data_segment, args.eval.fake_data_transform) # this also sets the torso (torso_lift_joint) to the height in the data
     table_height = init_rope_xyz[:,2].mean() - .02
-    #sim_util.bulletsimpy.sim_params.friction= np.inf
-    #table_xml = sim_util.make_cylinder_xml("table", translation=[1,0,.3],radius=.5,height=1.2)
-    table_xml = sim_util.make_table_xml(translation=[1, 0, table_height + (-.1 + .01)], extents=[.85, .5, .1])
+    table_xml = sim_util.make_table_xml(translation=[1, 0, table_height + (-.1 + .01)], extents=[.85, .85, .1])
 # table_xml = sim_util.make_table_xml(translation=[1-.3, 0, table_height + (-.1 + .01)], extents=[.85-.3, .85-.3, .1])
     sim_env.env.LoadData(table_xml)
     obstacle_bodies = []
@@ -1255,115 +1077,3 @@ if __name__ == "__main__":
 
 def get_points():
     args = parse_input_args()
-
-
-
-"""
-handles.append(sim_env.env.plot3(f.transform_points(old_cloud[:,:3]), 2, old_cloud[:,3:] if args_eval.use_color else (1,1,0)))
-new_cloud_rs = corr.dot(new_cloud)
-handles.append(sim_env.env.plot3(new_cloud_rs[:,:3], 2, new_cloud_rs[:,3:] if args_eval.use_color else (0,1,0)))
-
-
-
-
-
-
-
-handles.extend(draw_grid(sim_env, old_cloud[:,:3], f))
-
-
-old_ee_traj = asarray(seg_info["%s_gripper_tool_frame"%lr]['hmat'][i_start - int(i_start > 0):i_end+1])
-transformed_ee_traj = f.transform_hmats(old_ee_traj)
-transformed_ee_traj_rs = np.asarray(resampling.interp_hmats(timesteps_rs, np.arange(len(transformed_ee_traj)), transformed_ee_traj))
-
-
-handles.append(sim_env.env.drawlinestrip(old_ee_traj[:,:3,3], 2, (1,0,0)))
-handles.append(sim_env.env.drawlinestrip(transformed_ee_traj[:,:3,3], 2, (1,1,0)))
-handles.append(sim_env.env.drawlinestrip(transformed_ee_traj_rs[:,:3,3], 2, (0,1,0)))
-sim_env.viewer.Step()
-
-
-dof_inds = sim_util.dof_inds_from_name(sim_env.robot, manip_name)
-joint_ind = sim_env.robot.GetJointIndex("%s_shoulder_lift_joint"%lr)
-init_arm_traj = old_arm_traj_rs.copy()
-init_arm_traj[:,dof_inds.index(joint_ind)] = sim_env.robot.GetDOFLimits([joint_ind])[0][0]
-# might need to change this to krig
-new_arm_traj, obj_value, pose_errs = planning.plan_follow_traj(sim_env.robot, manip_name, sim_env.robot.GetLink(ee_link_name), transformed_ee_traj_rs, init_arm_traj,
-                                                           start_fixed=i_miniseg_lr!=0,
-                                                           beta_pos=beta_pos, beta_rot=beta_rot)
-
-
-old_ee_traj_rs = np.asarray(resampling.interp_hmats(timesteps_rs, np.arange(len(old_ee_traj)), old_ee_traj))
-old_finger_traj_rs = mu.interp2d(timesteps_rs, np.arange(len(old_finger_traj)), old_finger_traj)
-flr2old_finger_pts_traj_rs = sim_util.get_finger_pts_traj(sim_env, lr, (old_ee_traj_rs, old_finger_traj_rs))
-
-flr2transformed_finger_pts_traj_rs = {}
-flr2finger_link = {}
-flr2finger_rel_pts = {}
-for finger_lr in 'lr':
-    flr2transformed_finger_pts_traj_rs[finger_lr] = f.transform_points(np.concatenate(flr2old_finger_pts_traj_rs[finger_lr], axis=0)).reshape((-1,4,3))
-    flr2finger_link[finger_lr] = sim_env.robot.GetLink("%s_gripper_%s_finger_tip_link"%(lr,finger_lr))
-    flr2finger_rel_pts[finger_lr] = sim_util.get_finger_rel_pts(finger_lr)
-
-handles.extend(draw_finger_pts_traj(sim_env, flr2old_finger_pts_traj_rs, (1,0,0)))
-handles.extend(draw_finger_pts_traj(sim_env, flr2transformed_finger_pts_traj_rs, (0,1,0)))
-sim_env.viewer.Step()
-
-print "planning finger points trajectory following"
-new_traj, obj_value, pose_errs = planning.plan_follow_finger_pts_traj(sim_env.robot, manip_name, flr2finger_link, flr2finger_rel_pts, flr2transformed_finger_pts_traj_rs, init_traj, start_fixed=i_miniseg_lr!=0,beta_pos=beta_pos, gamma=gamma)
-
-flr2new_transformed_finger_pts_traj_rs = {}
-for finger_lr in 'lr':
-    flr2new_transformed_finger_pts_traj_rs[finger_lr] = f.transform_points(np.concatenate(flr2old_finger_pts_traj_rs[finger_lr], axis=0)).reshape((-1,4,3))
-
-handles.extend(draw_finger_pts_traj(sim_env, flr2new_transformed_finger_pts_traj_rs, (0,1,1)))
-sim_env.viewer.Step()
-
-
-seg_info = GlobalVars.actions[action]
-
-closing_inds = get_closing_inds(seg_info)
-closing_hmats = {}
-for lr in closing_inds:
-    if closing_inds[lr] != -1:
-        closing_hmats[lr] = seg_info["%s_gripper_tool_frame"%lr]['hmat'][closing_inds[lr]]
-
-old_cloud = get_action_cloud_ds(sim_env, action, args_eval)
-new_cloud = state[1]
-interest_pts_inds = np.zeros(len(old_cloud), dtype=bool)
-
-
-
-
-interest_pts_inds += np.apply_along_axis(np.linalg.norm, 1, old_cloud - closing_hmats['r'][:3,3]) < 0.05
-
-
-x_na = old_cloud
-y_ng = corr.dot(new_cloud)
-xtangents = find_rope_tangents(x_na)
-ytangents = find_rope_tangents(y_ng)
-xnormals = xtangents.copy()
-ynormals = ytangents.copy()
-xnormals[:,0], xnormals[:,1] = -xnormals[:,1], xnormals[:,0]
-ynormals[:,0], ynormals[:,1] = -ynormals[:,1], ynormals[:,0]
-
-#Epts = np.r_[x_na, x_na]
-#exs = np.r_[xtangents, xnormals]
-#eys = np.r_[ytangents, ynormals]
-Epts = x_na[interest_pts_inds]
-exs = xnormals[interest_pts_inds]
-eys = ynormals[interest_pts_inds]
-
-normal_coef = args_eval.normal_coef
-weights = np.ones(((len(x_na)+len(exs)), 1))
-weights[len(x_na):] *= normal_coef
-cost = planning.krig_obj(f, x_na, y_ng, exs, eys, Epts, args_eval.bend_coef, 1e-5, weights)
-
-
-
-
-
-
-
-
-"""

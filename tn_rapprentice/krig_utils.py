@@ -112,12 +112,12 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 		S_00   = dist_mat*dist_mat_sqrt #sigma
 		
 		nXsqrt = np.sqrt(nX)
-		S_01x  = Exs*xedist*nXsqrt # dsigma/dx
-		S_01y  = Eys*yedist*nXsqrt # dsigma/dy
+		S_01x  = xedist*nXsqrt # dsigma/dx
+		S_01y  = yedist*nXsqrt # dsigma/dy
 
 		nEXsqrt = np.sqrt(nEX)
-		S_10x  = Exs*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
-		S_10y  = Eys*exdist_y*nEXsqrt#dsigma/dy.T
+		S_10x  = exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
+		S_10y  = exdist_y*nEXsqrt#dsigma/dy.T
 		#S_10x  = Exs*S_01x.T#dsigma/dx.T
 		#S_10y  = Eys*S_01y.T #dsigma/dy.T
 		
@@ -127,12 +127,12 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 		Esqrt = np.sqrt(E_dist_mat)
 		Esqrt1 = np.sqrt(E_dist_mat1)
 
-		S_11xx = Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1 #dsigma/dxdy
-		S_11xy = Exdist*Eydist/Esqrt1 #dsigma/dxdy
-		S_11yy = Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1 #dsigma/dydy
+		S_11xx = nan2zero(Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1) #dsigma/dxdy
+		S_11xy = nan2zero(Exdist*Eydist/Esqrt1) #dsigma/dxdy
+		S_11yy = nan2zero(Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1) #dsigma/dydy
 
-		S_01   = S_01x + S_01y
-		S_10   = S_10x + S_10y
+		S_01   = Exs*S_01x + Eys*S_01y
+		S_10   = Exs.T*S_10x + Eys.T*S_10y
 		S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy) -4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy)
 
 		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
@@ -439,7 +439,7 @@ def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 
 	S = krig_mat_landmark(alpha, Xs)
 	D = np.c_[np.ones((n,1)), Xs]
-	B = bending_energy(S,D)
+	B = bending_energynormal(S,D)
 
 	Q = np.c_[S,D]
 	WQ = wt_n[:,None]*Q
@@ -451,7 +451,7 @@ def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 
 	Theta = solve_eqp1(H, f, A)
 
-	return Theta[:n], Theta[n:]
+	return Theta[:n], Theta[n], Theta[n+1:]
 
 #Doesn't matter
 

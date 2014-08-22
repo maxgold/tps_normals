@@ -23,6 +23,7 @@ import numpy.linalg as nlg
 from tn_rapprentice.tps import tps_eval, tps_grad, tps_fit3, tps_fit_regrot, tps_kernel_matrix, tps_cost
 # from svds import svds
 from tn_rapprentice import krig_utils as ku
+from tn_eval import tps_utils
 
 
 class Transformation(object):
@@ -188,7 +189,7 @@ def fit_KrigingSpline_Interest(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_co
     f.x_na, f.ex_na, f.exs = Xs, Epts, Exs
     return f
 
-def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .1, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5, interest_pts_inds = None):
+def fit_KrigingSpline(Xs, Epts, Exs, Ys, Eys, bend_coef = .01, normal_coef = 1, wt_n=None, alpha = 1.5, rot_coefs = 1e-5, interest_pts_inds = None):
     """
     Xs: landmark source cloud
     Epts: normal point source cloud
@@ -526,8 +527,103 @@ def tps_rpm_bij_normals(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_fi
     g._cost = krig_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, g.exs, ytarg_md, eytarg_md, regs[i], wt_n=wt_mm)/wt_m.mean()
     return f,g
 
+#@profile
+def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, T_init=.04,  T_final=.00004, bend_init=10, bend_final=.1,
+                     rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, angle = 0,
+                     square_size = 0, circle_rad = 0):
+    _,d=x_nd.shape
+    Ts = loglinspace(T_init, T_final, n_iter)
+    Bs = loglinspace(bend_init, bend_final, n_iter)
+    if f_init is not None: 
+        f = f_init  
+    else:
+        f = ThinPlateSpline(d)
+        # f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
+
+    if orig_source is None:
+        orig_source = x_nd
+    if orig_target is None:
+        orig_target = y_md
+
+    #x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 1.5,]), np.array([0,1])
+    #x0sr, x1sr, x2sr, x3sr, x4sr = rotate_point2d(x0s, angle),rotate_point2d(x1s, angle),rotate_point2d(x2s, angle),rotate_point2d(x3s, angle),rotate_point2d(x4s, angle)
+
+    curve_cost = compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize)
+
+    #plt.ion()
+    #fig1 = plt.figure()
+    #ax1 = fig1.add_subplot(111, projection='3d')
+
+    #number_points=30
+
+    for i in xrange(n_iter):
+        for j in range(EM_iter):
+            #print i, j
+            f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, Ts[i], Bs[i], rot_reg, outlierprior, curve_cost = curve_cost, beta = beta)
+        #ipy.embed()
+        
+    return f, corr_nm
 
 
+def EM_step(f, x_nd, y_md, outlierfrac, temp, bend_coef, rot_reg, outlierprior, curve_cost = None, beta = 1):
+    n,_ = x_nd.shape
+    m,_ = y_md.shape
+    x_priors = np.ones(n)*outlierprior    
+    y_priors = np.ones(m)*outlierprior
+
+    xwarped_nd = f.transform_points(x_nd)
+    dist_nm = ssd.cdist(xwarped_nd, y_md,'sqeuclidean')
+    T = temp
+    prob_nm = np.exp( -dist_nm / T )
+
+    beta = beta
+    if curve_cost != None:
+        pi = np.exp(-beta*curve_cost)
+        pi /= pi.max() # we can do better I think
+        prob_nm *= pi
+        #ipy.embed()
+
+    corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
+    corr_nm += 1e-9    
+    wt_n = corr_nm.sum(axis=1)
+
+    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+      
+    f = fit_ThinPlateSpline_corr(x_nd, y_md, corr_nm, bend_coef, rot_reg)
+    return f, corr_nm
+
+def compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize):
+    x_curves = tps_utils.find_all_curvatures(x_nd, orig_source, wsize)
+    y_curves = tps_utils.find_all_curvatures(y_md, orig_target, wsize)
+
+    x_curves = np.c_[x_curves, np.zeros((len(x_curves), 1))]
+    y_curves = np.c_[y_curves, np.zeros((len(y_curves), 1))]
+
+    curve_cost = ssd.cdist(x_curves, y_curves, 'cityblock')
+
+    return curve_cost
+
+def fit_ThinPlateSpline_corr(x_nd, y_md, corr_nm, bend_coef, rot_reg, x_weights = None):
+    wt_n = corr_nm.sum(axis=1)
+    if np.any(wt_n == 0):
+        inlier = wt_n != 0
+        x_nd = x_nd[inlier,:]
+        wt_n = wt_n[inlier,:]
+        x_weights = x_weights[inlier]
+        xtarg_nd = (corr_nm[inlier,:]/wt_n[:,None]).dot(y_md)
+    else:
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+    if x_weights is not None:
+        if x_weights.ndim > 1:
+            wt_n=wt_n[:,None]*x_weights
+        else:
+            wt_n=wt_n*x_weights
+    f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = bend_coef, wt_n = wt_n, rot_coef = rot_reg)
+    f._bend_coef = bend_coef
+    f._wt_n = wt_n
+    f._rot_coef = rot_reg
+    f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
+    return f
 
 def tps_reg_cost(f):
     K_nn = tps.tps_kernel_matrix(f.x_na)
@@ -542,7 +638,7 @@ def krig_reg_cost(f):
     for w in f.w_ng.T:
         cost += w.dot(K_nn.dot(w))
     return cost
-    
+
 def logmap(m):
     "http://en.wikipedia.org/wiki/Axis_angle#Log_map_from_SO.283.29_to_so.283.29"
     theta = np.arccos(np.clip((np.trace(m) - 1)/2,-1,1))
@@ -677,292 +773,6 @@ def krig_cost(lin_ag, trans_g, w_ng, x_na, y_ng, exs, eys, bend_coef, K_nn = Non
     else:
         return res_cost + bend_cost
 
-def tps_rpm_bij_normals_naive1(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, 
-            plotting = False, plot_cb = None, x_weights = None, y_weights = None, outlierprior = .1, outlierfrac = 2e-1, vis_cost_xy = None, normal_coef = 1):
-    """
-    tps-rpm algorithm mostly as described by chui and rangaran
-    reg_init/reg_final: regularization on curvature
-    rad_init/rad_final: radius for correspondence calculation (meters)
-    plotting: 0 means don't plot. integer n means plot every n iterations
-    interest_pts are points in either scene where we want a lower prior of outliers
-    x_weights: rescales the weights of the forward tps fitting of the last iteration
-    y_weights: same as x_weights, but for the backward tps fitting
-    """
-    _,d=x_nd.shape
-    regs = loglinspace(reg_init, reg_final, n_iter)
-    rads = loglinspace(rad_init, rad_final, n_iter)
-
-    f = fit_KrigingSpline(x_nd, x_nd, exs, x_nd, exs)
-    f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0) # align the medians
-    # do a coarse search through rotations
-    # fit_rotation(f, x_nd, y_md)
-    
-    g = fit_KrigingSpline(y_md, y_md, eys, y_md, eys)
-    g.trans_g = -f.trans_g
-
-    # set up outlier priors for source and target scenes
-    n, _ = x_nd.shape
-    m, _ = y_md.shape
-
-    x_priors = np.ones(n)*outlierprior    
-    y_priors = np.ones(m)*outlierprior    
-
-    # r_N = None
-    
-    for i in xrange(n_iter):
-        xwarped_nd = f.transform_points(x_nd)
-        ywarped_md = g.transform_points(y_md)
-        
-        fwddist_nm = ssd.cdist(xwarped_nd, y_md,'euclidean')
-        invdist_nm = ssd.cdist(x_nd, ywarped_md,'euclidean')
-        
-        r = rads[i]
-        prob_nm = np.exp( -(fwddist_nm + invdist_nm) / (2*r) )
-        if vis_cost_xy != None:
-            pi = np.exp( -vis_cost_xy )
-            pi /= pi.max() # rescale the maximum probability to be 1. effectively, the outlier priors are multiplied by a visual prior of 1 (since the outlier points have a visual prior of 1 with any point)
-            prob_nm *= pi
-
-        corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
-        corr_nm += 1e-9
-        
-        wt_n = corr_nm.sum(axis=1)
-        wt_m = corr_nm.sum(axis=0)
-
-        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-        ytarg_md = (corr_nm/wt_m[None,:]).T.dot(x_nd)
-        extarg_nd = (corr_nm/wt_n[:,None]).dot(eys)
-        eytarg_md = (corr_nm/wt_m[None,:]).T.dot(exs)
-        
-        if plotting and i%plotting==0:
-            plot_cb(x_nd, y_md, xtarg_nd, corr_nm, wt_n, f)
-        
-        if i == (n_iter-1):
-            if x_weights is not None:
-                wt_n=wt_n*x_weights
-            if y_weights is not None:
-                wt_m=wt_m*y_weights
-        f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, extarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coefs = rot_reg, normal_coef = 0)
-        g = fit_KrigingSpline(y_md, y_md, eys, ytarg_md, eytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coefs = rot_reg, normal_coef = 0)
-        
-        # add metadata of the transformation f
-        f._corr = corr_nm
-        f._bend_coef = regs[i]
-        f._rot_coef = rot_reg
-        f._wt_n = wt_n
-    
-    f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, extarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coefs = rot_reg)
-    g = fit_KrigingSpline(y_md, y_md, eys, ytarg_md, eytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coefs = rot_reg)
-    
-    f._cost = tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
-    g._cost = tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
-    return f,g
-
-def tps_rpm_bij_normals_naive2(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg = 1e-3, 
-            plotting = False, plot_cb = None, x_weights = None, y_weights = None, outlierprior = .1, outlierfrac = 2e-1, vis_cost_xy = None, normal_coef = 1):
-    """
-    tps-rpm algorithm mostly as described by chui and rangaran
-    reg_init/reg_final: regularization on curvature
-    rad_init/rad_final: radius for correspondence calculation (meters)
-    plotting: 0 means don't plot. integer n means plot every n iterations
-    interest_pts are points in either scene where we want a lower prior of outliers
-    x_weights: rescales the weights of the forward tps fitting of the last iteration
-    y_weights: same as x_weights, but for the backward tps fitting
-    """
-    _,d=x_nd.shape
-    regs = loglinspace(reg_init, reg_final, n_iter)
-    rads = loglinspace(rad_init, rad_final, n_iter)
-
-    f = fit_KrigingSpline(x_nd, x_nd, exs, x_nd, exs)
-    f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0) # align the medians
-    # do a coarse search through rotations
-    # fit_rotation(f, x_nd, y_md)
-    
-    g = fit_KrigingSpline(y_md, y_md, eys, y_md, eys)
-    g.trans_g = -f.trans_g
-
-    # set up outlier priors for source and target scenes
-    n, _ = x_nd.shape
-    m, _ = y_md.shape
-
-    x_priors = np.ones(n)*outlierprior    
-    y_priors = np.ones(m)*outlierprior    
-
-    # r_N = None
-    
-    for i in xrange(n_iter):
-        xwarped_nd = f.transform_points(x_nd)
-        ywarped_md = g.transform_points(y_md)
-        
-        fwddist_nm = ssd.cdist(xwarped_nd, y_md,'euclidean')
-        invdist_nm = ssd.cdist(x_nd, ywarped_md,'euclidean')
-        
-        r = rads[i]
-        prob_nm = np.exp( -(fwddist_nm + invdist_nm) / (2*r) )
-        if vis_cost_xy != None:
-            pi = np.exp( -vis_cost_xy )
-            pi /= pi.max() # rescale the maximum probability to be 1. effectively, the outlier priors are multiplied by a visual prior of 1 (since the outlier points have a visual prior of 1 with any point)
-            prob_nm *= pi
-
-        corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
-        corr_nm += 1e-9
-        
-        wt_n = corr_nm.sum(axis=1)
-        wt_m = corr_nm.sum(axis=0)
-
-        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-        ytarg_md = (corr_nm/wt_m[None,:]).T.dot(x_nd)
-        extarg_nd = (corr_nm/wt_n[:,None]).dot(eys)
-        eytarg_md = (corr_nm/wt_m[None,:]).T.dot(exs)
-        
-        if plotting and i%plotting==0:
-            plot_cb(x_nd, y_md, xtarg_nd, corr_nm, wt_n, f)
-        
-        if i == (n_iter-1):
-            if x_weights is not None:
-                wt_n=wt_n*x_weights
-            if y_weights is not None:
-                wt_m=wt_m*y_weights
-        f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, extarg_nd, bend_coef = regs[i], wt_n=wt_n, rot_coefs = rot_reg, normal_coef = normal_coef)
-        g = fit_KrigingSpline(y_md, y_md, eys, ytarg_md, eytarg_md, bend_coef = regs[i], wt_n=wt_m, rot_coefs = rot_reg, normal_coef = normal_coef)
-        
-        # add metadata of the transformation f
-        f._corr = corr_nm
-        f._bend_coef = regs[i]
-        f._rot_coef = rot_reg
-        f._wt_n = wt_n
-    
-    f._cost = tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, regs[i], wt_n=wt_n)/wt_n.mean()
-    g._cost = tps_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, ytarg_md, regs[i], wt_n=wt_m)/wt_m.mean()
-    return f,g
-
-def tps_rpm_normals_naive1(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg=1e-4,
-            plotting = False, f_init = None, plot_cb = None, normal_coef = 1):
-    """
-    tps-rpm algorithm mostly as described by chui and rangaran
-    reg_init/reg_final: regularization on curvature
-    rad_init/rad_final: radius for correspondence calculation (meters)
-    plotting: 0 means don't plot. integer n means plot every n iterations
-    """
-    _,d=x_nd.shape
-    regs = loglinspace(reg_init, reg_final, n_iter)
-    rads = loglinspace(rad_init, rad_final, n_iter)
-    if f_init is not None: 
-        f = f_init  
-    else:
-        f = fit_KrigingSpline(x_nd, x_nd, exs, x_nd, exs)
-        # f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
-
-    for i in xrange(n_iter):
-        xwarped_nd = f.transform_points(x_nd)
-        corr_nm, r_n, _ = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
-
-        wt_n = corr_nm.sum(axis=1)
-        wt_nn = np.r_[wt_n, wt_n]
-
-
-        targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-        etarg_nd = (corr_nm/wt_n[:,None]).dot(eys)
-        
-        if plotting and i%plotting==0:
-            plot_cb(x_nd, y_md, targ_nd, corr_nm, wt_n, f)
-        
-        
-        f = fit_KrigingSpline(x_nd, x_nd, exs, targ_nd, etarg_nd, bend_coef = regs[i], wt_n=wt_nn, rot_coefs = rot_reg, normal_coef = 0)
-
-    f = fit_KrigingSpline(x_nd, x_nd, exs, targ_nd, etarg_nd, bend_coef = regs[i], wt_n=wt_nn, rot_coefs = rot_reg, normal_coef=normal_coef)
-    f._corr = corr_nm
-    f._bend_coef = regs[i]
-    f._rot_coef = rot_reg
-    f._wt_n = wt_n
-
-    return f, corr_nm
-
-def tps_rpm_normals_naive2(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, rot_reg=1e-4,
-            plotting = False, f_init = None, plot_cb = None, normal_coef = 1):
-    """
-    tps-rpm algorithm mostly as described by chui and rangaran
-    reg_init/reg_final: regularization on curvature
-    rad_init/rad_final: radius for correspondence calculation (meters)
-    plotting: 0 means don't plot. integer n means plot every n iterations
-    """
-    _,d=x_nd.shape
-    regs = loglinspace(reg_init, reg_final, n_iter)
-    rads = loglinspace(rad_init, rad_final, n_iter)
-    if f_init is not None: 
-        f = f_init  
-    else:
-        f = fit_KrigingSpline(x_nd, x_nd, exs, x_nd, exs)
-        # f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
-
-    for i in xrange(n_iter):
-        xwarped_nd = f.transform_points(x_nd)
-        corr_nm, r_n, _ = calc_correspondence_matrix(xwarped_nd, y_md, r=rads[i], p=.1, max_iter=10)
-
-        wt_n = corr_nm.sum(axis=1)
-        wt_nn = np.r_[wt_n, wt_n]
-
-
-        targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-        etarg_nd = (corr_nm/wt_n[:,None]).dot(eys)
-        
-        if plotting and i%plotting==0:
-            plot_cb(x_nd, y_md, targ_nd, corr_nm, wt_n, f)
-        
-        
-        f = fit_KrigingSpline(x_nd, x_nd, exs, targ_nd, etarg_nd, bend_coef = regs[i], wt_n=wt_nn, rot_coefs = rot_reg, normal_coef=normal_coef)
-    f._corr = corr_nm
-    f._bend_coef = regs[i]
-    f._rot_coef = rot_reg
-    f._wt_n = wt_n
-
-    return f, corr_nm
-
-
-
-def tps_rpm_normals_interest(x_nd, y_md, exs, eys,  Epts = None, n_iter = 20, reg_init = .1, reg_final = .001, rad_init = .1, rad_final = .005, normal_weight = 1, alpha = 1.5, 
-            point_init = 1, point_final = 1, normal_init = 1, normal_final = 1, normal_coef = 1, rot_reg = 1e-5):
-    #the problem is that some entries become outliers 
-
-    n,d=x_nd.shape
-    regs = loglinspace(reg_init, reg_final, n_iter)
-    rads = loglinspace(rad_init, rad_final, n_iter)
-    norms = loglinspace(normal_init, normal_final, n_iter)
-    points = loglinspace(point_init, point_final, n_iter)
-
-
-    f = fit_KrigingSpline(x_nd, Epts, exs, x_nd, exs)
-
-    for i in xrange(n_iter):
-        xwarped_nd = f.transform_points(x_nd)
-        ewarped_xs = f.transform_normals(Epts, exs)
-        r = rads[i]
-
-        distmat = ssd.cdist(xwarped_nd,y_md, 'euclidean')
-        distmat_n = ssd.cdist(ewarped_xs, eys, 'cosine')
-        #dist_nm = points[i]*distmat[interest_pts_inds] + norms[i]*distmat_n
-        dist_nm = distmat + normal_final*distmat_n
-
-        prob_nm = np.exp(-dist_nm/(2*r))
-
-        corr_nm =  balance_matrix(prob_nm, .1)
-        corr_nm += 1e-9
-
-        wt_n = corr_nm.sum(axis=1)
-        #wt_ni = corr_nm[interest_pts_inds].sum(axis=1)
-        wt_nn = np.r_[wt_n, wt_n]
-
-        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-        etarg_ys = (corr_nm/wt_n[:,None]).dot(eys) #have to normalize this
-        etarg_ys = etarg_ys/nlg.norm(etarg_ys, axis=1)[:,None]
-
-        f = fit_KrigingSpline(x_nd, Epts, exs, xtarg_nd, etarg_ys, bend_coef = regs[i], wt_n=wt_nn, normal_coef=normal_coef) #vary normal coefficient? Maybe set it to norms[i] then put another fit outside loop with normal_coef = 1 or whatever
-        f._corr = corr_nm
-        f._bend_coef = regs[i]
-        f._rot_coef = rot_reg
-        f._wt_n = wt_n
-    return f, corr_nm
-
 
 
 def tps_rpm_normals_perp(Xs, Ys, Exs, Eys, Epts=None, n_iter=20, reg_init=.1, reg_final=.001, rad_init=.1, rad_final=.001,  normal_weight = 1, alpha = 1.5,
@@ -1028,11 +838,26 @@ def close_to_perp(Epts, Exs, etarg, Eys, wt_n, perp_angle):
 def main():
     from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in
     from tn_eval.tps_utils import find_all_normals_naive
-    pts1 = gen_half_sphere(1, 30)
-    pts2 = gen_half_sphere_pulled_in(1, 30, 4, .2)
-    e1 = find_all_normals_naive(pts1, .7, flip_away=True)
-    e2 = find_all_normals_naive(pts2, .7, flip_away=True)
-    f = fit_KrigingSpline(pts1, pts1, e1, pts2, e2)
-    f = fit_ThinPlateSpline(pts1, pts2)
+    import big_rope_pcloud
+    EM_iter = 1
+    beta = 2e1 #20 works for 90 rotation
+    wsize = .1
+    T_init = .04
+    T_final = .00004
+    bend_init = 1 # 1e2 works for 90 rotation
+    bend_final = .001
+
+    pts1 = big_rope_pcloud.old_cloud
+    pts2 = big_rope_pcloud.new_cloud
+    big_old_cloud = big_rope_pcloud.big_old_cloud
+    big_new_cloud = big_rope_pcloud.big_new_cloud
+
+    tps_rpm_curvature_prior1(pts1, pts2, orig_source = big_old_cloud, orig_target = big_new_cloud, n_iter = 14, EM_iter = EM_iter, 
+                    T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta)
+
+    import IPython as ipy
+    ipy.embed()
+
+
 if __name__ == "__main__":
     main()

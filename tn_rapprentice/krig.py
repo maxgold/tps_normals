@@ -21,14 +21,14 @@ def krig_eval_landmark(alpha, Xs, Ys, w_ng, lin_ag):
 
 def transform_normals1(alpha, Xs, Epts, Exs, Eypts, Eys, w_ng, lin_ag):
 	"""
-	transforms the normlas of the kriging function
-	can only evaluate at Epts for now
+	transforms the normals of the kriging function
 	"""
 	n, d = Xs.shape
+	m, _ = w_ng.shape
 
 	S = ku.krig_kernel_mat2(alpha, Xs, Epts, Exs, Eys, Xs, Eypts)	
 	D = ku.krig_mat_linear(Xs, Eypts, Eys)
 
-	return S[n:].dot(w_ng) + D[n:, 1:].dot(lin_ag)
+	return S[n:, :m].dot(w_ng) + D[n:, 1:].dot(lin_ag)
 
 

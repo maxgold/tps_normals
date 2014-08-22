@@ -140,30 +140,117 @@ def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
     
     return nm
 
-def find_all_normals_naive (dspcloud, wsize=0.02, flip_away=False, project_lower_dim=False, pcloud = None):
+def find_all_normals_naive (dspcloud, orig_cloud = None, wsize=0.02, flip_away=False, project_lower_dim=False):
     """
     Find normals at all the points of the downsampled point cloud, dspcloud, in the original point cloud, pcloud.
     """
-    if pcloud is None:
-        pcloud = dspcloud
+    if orig_cloud is None:
+        orig_cloud = dspcloud
 
     if project_lower_dim:
-        dim = pcloud.shape[1]
-        pmean = pcloud.sum(axis=0)/pcloud.shape[0]
-        p_centered = pcloud - pmean
+        dim = dspcloud.shape[1]
+        pmean = dspcloud.sum(axis=0)/dspcloud.shape[0]
+        p_centered = dspcloud - pmean
         _,_,VT = np.linalg.svd(p_centered, full_matrices=True)
         p_lower_dim = VT[0:dim-1,:].dot(p_centered.T).T
         p_ld_nms = find_all_normals_naive(p_lower_dim,wsize=wsize,flip_away=flip_away,project_lower_dim=False)
         return VT[0:dim-1,:].T.dot(p_ld_nms.T).T
 
     
-    normals = np.zeros([0,pcloud.shape[1]])
+    normals = np.zeros([0,dspcloud.shape[1]])
     for pt in dspcloud:
-        nm = find_normal_naive(pcloud,pt,wsize,flip_away)
+        nm = find_normal_naive(orig_cloud,pt,wsize,flip_away)
         normals = np.r_[normals,np.atleast_2d(nm)]
     return normals
 
+def find_curvature_pt(pcloud, pt, wsize = 0.02):
+    dim = pcloud.shape[1]
+    cpoints = pcloud[nlg.norm(pcloud-pt, axis=1) <= wsize,:]
 
+    if cpoints.shape[0] < dim: return 0
+    
+    cpoints = cpoints - cpoints.sum(axis=0)/cpoints.shape[0]
+    _,S,_ = np.linalg.svd(cpoints, full_matrices=True)
+
+    if np.sum(S) > 0:
+        return S[-1]/np.sum(S)
+    else:
+        return 0
+
+        
+def find_all_curvatures(dspcloud, orig_cloud = None, wsize = 0.02, project_lower_dim = False):
+    if orig_cloud is None:
+        orig_cloud = dspcloud
+    
+    if project_lower_dim:
+        dim = dspcloud.shape[1]
+        pmean = dspcloud.sum(axis=0)/dspcloud.shape[0]
+        p_centered = dspcloud - pmean
+        _,_,VT = np.linalg.svd(p_centered, full_matrices=True)
+        p_lower_dim = VT[0:dim-1,:].dot(p_centered.T).T
+        p_ld_nms = find_all_curvatures(p_lower_dim,wsize=wsize,flip_away=flip_away,project_lower_dim=False)
+        return VT[0:dim-1,:].T.dot(p_ld_nms.T).T
+
+    curvatures = np.zeros([0])
+    for pt in dspcloud:
+        curve = find_curvature_pt(orig_cloud, pt, wsize)
+        curvatures = np.r_[curvatures, curve]
+
+    return curvatures
+
+def find_all_normals_below_threshold(dspcloud, orig_cloud = None, thresh = .36, wsize = .1):
+    if orig_cloud is None:
+        orig_cloud = dspcloud
+    _, d = dspcloud.shape
+
+    normals = np.zeros([0,dspcloud.shape[1]])    
+    if d == 3:
+        znormal = np.array([0,0,1])
+    else:
+        znormal = np.array([0,0])
+    for pt in dspcloud:
+        curve = find_curvature_pt(orig_cloud, pt, wsize)
+        if curve < thresh:
+            nm = find_normal_naive(orig_cloud, pt, wsize)
+            normals = np.r_[normals, np.atleast_2d(nm)]
+        else:
+            normals = np.r_[normals, np.atleast_2d(znormal)]
+
+    return normals
+
+def flip_normals(pts1, epts, exs,  pts2, eys, bend_coef = .1):
+    from tn_rapprentice.registration import fit_KrigingSpline
+    f = fit_KrigingSpline(pts1, epts, exs, pts2, eys, bend_coef = .1, normal_coef = 0)
+    ewarped = f.transform_normals(epts, exs)
+    eflipped = -eys
+    ediff_n = nlg.norm(ewarped - eys, axis = 1)
+    ediff_flip = nlg.norm(ewarped - eflipped, axis = 1)
+
+    ediff = np.minimum(ediff_n, ediff_flip)
+
+
+    bools1 = np.array([ediff_n - ediff], dtype = bool) + 1
+    bools2 = np.array([ediff_flip - ediff], dtype = bool) + 1
+
+    bools1 = bools1 %2 
+    bools2 = bools2 %2
+
+    bools1, bools2 = np.array(bools1, dtype = bool), np.array(bools2, dtype = bool)
+
+    #import IPython as ipy
+    #ipy.embed()
+
+    final_flipped = eys*bools1.T + eflipped*bools2.T
+
+    return final_flipped
+
+
+def angle_difference(x, y):
+    xy = np.dot(x, y)
+    lx = nlg.norm(x)
+    ly = nlg.norm(y)
+    r = np.arccos(xy/(lx*ly))
+    return r*180/np.pi
 
 
 

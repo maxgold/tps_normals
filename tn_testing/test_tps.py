@@ -444,6 +444,77 @@ def test_normals_new5 ():
     test_normals_pts(pts2, e2, wsize=0.15,delta=0.15)
     mlab.show()
 
+def rotate_point_cloud3d(pcloud, angle):
+    ty = angle*np.pi/180
+    Ry = np.array([[np.cos(ty), 0, -np.sin(ty)], [0, 1, 0], [np.sin(ty), 0, np.cos(ty)]])
+    Rpc = np.zeros((pcloud.shape))
+    for i in range(len(pcloud)):
+        Rpc[i] = Ry.dot(pcloud[i])
+    return Rpc
+
+def rotate_point_cloud2d(pcloud, angle):
+    ty = angle*np.pi/180
+    Ry = np.array([[np.cos(ty), -np.sin(ty)], [np.sin(ty), np.cos(ty)]])
+    Rpc = np.zeros((pcloud.shape))
+    for i in range(len(pcloud)):
+        Rpc[i] = Ry.dot(pcloud[i])
+    return Rpc
+
+def gen_house(x0, x1, x2, x3, x4, number_points = 50):
+    """
+    x_i are the coordinates of the five corners of the house starting in the bottom left
+    and going counterclockwise around the house
+    number_points is the number of points on each part of the house
+    """
+
+    bottom_row = np.c_[np.linspace(x0[0], x1[0], number_points), np.linspace(x0[1], x1[1], number_points)]
+    right_column = np.c_[np.linspace(x1[0], x2[0], number_points), np.linspace(x1[1], x2[1], number_points)]
+    right_diagonal = np.c_[np.linspace(x2[0], x3[0], number_points), np.linspace(x2[1], x3[1], number_points)]
+    left_diagonal = np.c_[np.linspace(x3[0], x4[0], number_points), np.linspace(x3[1], x4[1], number_points)]
+    left_column = np.c_[np.linspace(x4[0], x0[0], number_points), np.linspace(x4[1], x0[1], number_points)]
+
+    house = np.r_[bottom_row, right_column, right_diagonal, left_diagonal, left_column]
+
+    return house
+
+def gen_houser(x0, x1, x2, x3, x4, number_points = 50):
+    """
+    x_i are the coordinates of the five corners of the house starting in the bottom left
+    and going counterclockwise around the house
+    number_points is the number of points on each part of the house
+    """
+
+    bottom_row = np.c_[np.linspace(x0[0], x1[0], number_points), np.linspace(x0[1], x1[1], number_points)]
+    right_column = np.c_[np.linspace(x1[0], x2[0], number_points), np.linspace(x1[1], x2[1], number_points)]
+    right_diagonal = np.c_[np.linspace(x2[0], x3[0], number_points), np.linspace(x2[1], x3[1], number_points)]
+    left_diagonal = np.c_[np.linspace(x3[0], x4[0], number_points), np.linspace(x3[1], x4[1], number_points)]
+    left_column = np.c_[np.linspace(x4[0], x0[0], number_points), np.linspace(x4[1], x0[1], number_points)]
+
+    house = np.r_[bottom_row, right_column, right_diagonal, left_diagonal, left_column]
+    
+    return house
+
+def gen_box_circle(square_size, circle_rad, square_xtrans = 0, square_ytrans = 0, circle_xtrans = 0, circle_ytrans =2.5, number_points = 50):
+    square_size = float(square_size)
+
+    x0 = np.array([-square_size/2, -square_size/2])
+    x1 = np.array([square_size/2, -square_size/2])
+    x2 = np.array([square_size/2, square_size/2])
+    x3 = np.array([-square_size/2, square_size/2])
+
+    bottom = np.c_[np.linspace(x0[0], x1[0], number_points), np.linspace(x0[1], x1[1], number_points)]
+    right = np.c_[np.linspace(x1[0], x2[0], number_points), np.linspace(x1[1], x2[1], number_points)]
+    left = np.c_[np.linspace(x0[0], x3[0], number_points), np.linspace(x0[1], x3[1], number_points)]
+    top = np.c_[np.linspace(x3[0], x2[0], number_points), np.linspace(x3[1], x2[1], number_points)]
+
+    square = np.r_[bottom, right, left, top]
+    circle = gen_circle_points(circle_rad, number_points)
+
+    square_trans = square + np.array([square_xtrans, square_ytrans])
+    circle_trans = circle + np.array([circle_xtrans, circle_ytrans])
+
+    return np.r_[square_trans, circle_trans]
+
 
 if __name__=='__main__':
 #     import h5py

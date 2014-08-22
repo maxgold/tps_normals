@@ -344,7 +344,6 @@ def solve_eqp1(H, f, A):
     
     return x
     
-#@profile
 def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n = None):
     if wt_n is None: wt_n = np.ones(len(x_na))
     n,d = x_na.shape
