@@ -5,10 +5,11 @@ def krig_eval(alpha, Xs, Epts, Exs, Ys, w_ng, lin_ag, trans_g):
 	"""
 	Evaluates kriging function
 	"""
+	m = len(w_ng)
 	n, d = Ys.shape
 	S = ku.krig_kernel_mat2(alpha, Xs, Epts, Exs, Exs, Ys, Epts)
 	
-	return S[:n].dot(w_ng) + Ys.dot(lin_ag) + trans_g[None,:]
+	return S[:n, :m].dot(w_ng) + Ys.dot(lin_ag) + trans_g[None, :]
 
 def krig_eval_landmark(alpha, Xs, Ys, w_ng, lin_ag):
 	assert Xs.shape[1] == Ys.shape[1]

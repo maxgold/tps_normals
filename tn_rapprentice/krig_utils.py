@@ -405,31 +405,55 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 	assert Exs.shape[0] == Eys.shape[0]
 	
 	n,dim = Xs.shape
+	d = dim
 	m,_ = Exs.shape
-	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-	wt_n[n:]*=normal_coef
-	rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
+	if normal_coef != 0:
+		if wt_n is None: wt_n = np.ones(n+m)/(n+m)
+		wt_n[n:]*=normal_coef
 
-	Y = np.r_[Ys, Eys]
+		Y = np.r_[Ys, Eys]
 
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear(Xs, Epts, Exs)
-	B = bending_energynormal(S, D, dim)
+		S = krig_kernel_mat(alpha, Xs, Epts, Exs)
+		D = krig_mat_linear(Xs, Epts, Exs)
+		B = bending_energynormal(S, D, dim)
 
-	Q = np.c_[S, D]
-	WQ = wt_n[:,None]*Q
-	H = Q.T.dot(WQ)
-	H[:n+m, :n+m] += bend_coef*B
-	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
-	f = -WQ.T.dot(Y)
-	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
+		Q = np.c_[S, D]
+		WQ = wt_n[:,None]*Q
+		H = Q.T.dot(WQ)
+		H[:n+m, :n+m] += bend_coef*B
 
-	A = np.c_[D.T, np.zeros((dim+1, dim+1))]
+		f = -WQ.T.dot(Y)
 
-	Theta = solve_eqp1(H, f, A)
+		A = np.c_[D.T, np.zeros((dim+1, dim+1))]
 
-	return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
+		Theta = solve_eqp1(H, f, A)
 
+		return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
+	else:
+		if wt_n is None: wt_n = np.ones(n)
+		rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
+
+
+		Y = Ys
+
+		S = krig_mat_landmark(alpha, Xs)
+		D = np.c_[np.ones((n,1)), Xs]
+		B = bending_energynormal(S,D, dim)
+
+		Q = np.c_[D,S]
+		WQ = wt_n[:,None]*Q
+		H = Q.T.dot(WQ)
+		H[d+1:, d+1:] += bend_coef*B
+		H[1:d+1, 1:d+1] += np.diag(rot_coefs)
+		
+		f = -WQ.T.dot(Y)
+		f[1:d+1,0:d] -= np.diag(rot_coefs)
+
+		A = np.r_[np.zeros((d+1,d+1)), D].T
+
+		Theta = solve_eqp1(H, f, A)
+
+		return Theta[d+1:], Theta[0], Theta[1:d+1]
 
 def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 	n, dim = Xs.shape

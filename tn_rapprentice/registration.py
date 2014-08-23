@@ -24,6 +24,7 @@ from tn_rapprentice.tps import tps_eval, tps_grad, tps_fit3, tps_fit_regrot, tps
 # from svds import svds
 from tn_rapprentice import krig_utils as ku
 from tn_eval import tps_utils
+import IPython as ipy
 
 
 class Transformation(object):
@@ -527,7 +528,6 @@ def tps_rpm_bij_normals(x_nd, y_md, exs, eys, n_iter = 20, reg_init = .1, reg_fi
     g._cost = krig_cost(g.lin_ag, g.trans_g, g.w_ng, g.x_na, g.exs, ytarg_md, eytarg_md, regs[i], wt_n=wt_mm)/wt_m.mean()
     return f,g
 
-#@profile
 def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, T_init=.04,  T_final=.00004, bend_init=10, bend_final=.1,
                      rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, angle = 0,
                      square_size = 0, circle_rad = 0):
@@ -547,7 +547,7 @@ def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None,
 
     #x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 1.5,]), np.array([0,1])
     #x0sr, x1sr, x2sr, x3sr, x4sr = rotate_point2d(x0s, angle),rotate_point2d(x1s, angle),rotate_point2d(x2s, angle),rotate_point2d(x3s, angle),rotate_point2d(x4s, angle)
-
+    #ipy.embed()
     curve_cost = compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize)
 
     #plt.ion()
