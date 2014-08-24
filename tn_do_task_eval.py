@@ -363,22 +363,24 @@ def register_tps_cheap(sim_env, state, action, args_eval):
     elif args_eval.reg_type == 'curve-rpm':
         
         EM_iter = 1
-        beta = 2e1 #20 works for 90 rotation
+        beta = 0 #20 works for 90 rotation
         wsize = .1
         T_init = .04
         T_final = .00004
         bend_init = 1 # 1e2 works for 90 rotation
         bend_final = .001
+        DS_SIZE = .01
 
         wsize = args_eval.wsize
         x_nd = old_cloud[:, :3]
         big_old_cloud = GlobalVars.actions[action]['old_cloud_xyz'][()]
         y_md = new_cloud[:, :3]
-        big_new_cloud, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)    
+        big_new_cloud, endpoint_inds = state[3]    
         np.set_printoptions(threshold=np.nan)
-        ipy.embed()
+        big_new_cloud_ds = clouds.downsample(big_new_cloud, DS_SIZE)
 
-        f , corr = tn_registration.tps_rpm_curvature_prior1(x_nd, y_md, orig_source = big_old_cloud, orig_target = big_new_cloud, n_iter = 14, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta)
+        #ipy.embed()
+        f , corr = tn_registration.tps_rpm_curvature_prior1(x_nd, y_md, orig_source = big_old_cloud, orig_target = big_new_cloud_ds, n_iter = 14, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta)
     return f, corr
 
     
@@ -439,9 +441,9 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
         else:
             state = state_or_get_state_fn(sim_env)
         if state is None: break
-        _, new_cloud, new_rope_nodes = state
+        _, new_cloud, new_rope_nodes, (big_new_cloud, endpoint_inds) = state
         new_cloud = new_cloud[:,:cloud_dim]
-        big_new_cloud, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)        
+        #big_new_cloud, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)        
         
 
         handles = []
@@ -477,7 +479,7 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
 
                 #ipy.embed()
 
-                _, corr = register_tps(sim_env, state, action, args_eval)
+                _, corr = register_tps_cheap(sim_env, state, action, args_eval)
 
                 bend_coef = args_eval.bend_coef
                 rot_coef = 1e-5
@@ -517,8 +519,9 @@ def compute_trans_traj(sim_env, state_or_get_state_fn, action, i_step, args_eval
                 #source_normals = find_all_normals_naive(old_cloud[interest_pts_tangents], big_old_cloud, wsize = wsize, project_lower_dim = pld)
                 source_normals = find_all_normals_naive(old_cloud[interest_pts_tangents][:, :2], big_old_cloud[:,:2], wsize = wsize, project_lower_dim = False)
                 source_normals = np.c_[source_normals, np.zeros(len(source_normals))]
-                target_normals = find_all_normals_naive(y_ng[interest_pts_tangents], big_new_cloud, wsize = wsize, project_lower_dim = pld)
-                
+                target_normals = find_all_normals_naive(y_ng[interest_pts_tangents][:, :2], big_new_cloud[:, :2], wsize = wsize, project_lower_dim = False)
+                target_normals = np.c_[target_normals, np.zeros(len(target_normals))]
+
                 wt_n = x_weights.copy()
                 #### flip_normals might be weird
                 target_normals = tps_utils.flip_normals(x_na, x_na[interest_pts_tangents], source_normals, y_ng, target_normals, bend_coef = .1)
@@ -835,9 +838,11 @@ def get_unique_id():
 
 def get_state(sim_env, args_eval):
     if args_eval.raycast:
-        new_cloud, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)
-        if new_cloud.shape[0] == 0: # rope is not visible (probably because it fall off the table)
+        new_cloud_rc, endpoint_inds = sim_env.sim.raycast_cloud(endpoints=3)
+        if new_cloud_rc.shape[0] == 0: # rope is not visible (probably because it fall off the table)
             return None
+        new_cloud = sim_env.sim.observe_cloud(upsample=args_eval.upsample, upsample_rad=args_eval.upsample_rad)
+        endpoint_inds = np.zeros(len(new_cloud), dtype=bool) # for now, args_eval.raycast=False is not compatible with args_eval.use_color=True
     else:
         new_cloud = sim_env.sim.observe_cloud(upsample=args_eval.upsample, upsample_rad=args_eval.upsample_rad)
         endpoint_inds = np.zeros(len(new_cloud), dtype=bool) # for now, args_eval.raycast=False is not compatible with args_eval.use_color=True
@@ -846,7 +851,7 @@ def get_state(sim_env, args_eval):
     new_cloud_ds = clouds.downsample(new_cloud, DS_SIZE) if args_eval.downsample else new_cloud
     new_rope_nodes = sim_env.sim.rope.GetControlPoints()
     new_rope_nodes= ropesim.observe_cloud(new_rope_nodes, sim_env.sim.rope_params.radius, upsample=args_eval.upsample)
-    state = ("eval_%i"%get_unique_id(), new_cloud_ds, new_rope_nodes)
+    state = ("eval_%i"%get_unique_id(), new_cloud_ds, new_rope_nodes, (new_cloud_rc, endpoint_inds))
     return state
 
 def select_best_action(sim_env, state, num_actions_to_try, feature_fn, prune_feature_fn, eval_stats, warpingcost):
@@ -902,7 +907,7 @@ def eval_on_holdout(args, sim_env):
             
             get_state_fn = lambda sim_env: get_state(sim_env, args.eval)
             state = get_state_fn(sim_env)
-            _, new_cloud_ds, new_rope_nodes = get_state_fn(sim_env)
+            _, new_cloud_ds, new_rope_nodes, _ = get_state_fn(sim_env)
 
             num_actions_to_try = MAX_ACTIONS_TO_TRY if args.eval.search_until_feasible else 1
             eval_stats = eval_util.EvalStats()
@@ -1141,7 +1146,7 @@ def load_simulation(args, sim_env):
     table_height = init_rope_xyz[:,2].mean() - .02
     #sim_util.bulletsimpy.sim_params.friction= np.inf
     #table_xml = sim_util.make_cylinder_xml("table", translation=[1,0,.3],radius=.5,height=1.2)
-    table_xml = sim_util.make_table_xml(translation=[1, 0, table_height + (-.1 + .01)], extents=[.85, .5, .1])
+    table_xml = sim_util.make_table_xml(translation=[1, 0, table_height + (-.1 + .01)], extents=[.85, .85, .1])
 # table_xml = sim_util.make_table_xml(translation=[1-.3, 0, table_height + (-.1 + .01)], extents=[.85-.3, .85-.3, .1])
     sim_env.env.LoadData(table_xml)
     obstacle_bodies = []

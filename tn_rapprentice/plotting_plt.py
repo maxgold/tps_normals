@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from mpl_toolkits.mplot3d import art3d
 import colorsys
+from tn_eval import tps_utils
 
 def plot_warped_grid_2d(f, mins, maxes, grid_res=None, color = 'gray', flipax = True, draw=True):
     xmin, ymin = mins
@@ -155,7 +156,7 @@ def plot_tps_registration(x_nd, y_md, f, res = (.1, .1, .04), x_color=None, y_co
     else:
         plot_tps_registration_2d(x_nd, y_md, f, x_color, y_color, xwarped_color)
 
-def plot_tps_registration_normals(x_md, y_md, f):
+def plot_tps_registration_normals(x_nd, y_md, e1, e2, f, wsize = .1):
     _,d = x_nd.shape
     x_color = (1,0,0,1)
     xwarped_color = (0,1,0,1)
@@ -172,6 +173,23 @@ def plot_tps_registration_normals(x_md, y_md, f):
     plt.scatter(y_md[:,0], y_md[:,1], c = y_color, marker = '+', s=50)
     xwarped_nd = f.transform_points(x_nd)
     plt.scatter(xwarped_nd[:,0], xwarped_nd[:,1], edgecolor=xwarped_color, facecolors='none', marker='o', s=50)
+
+    ewarped = f.transform_normals(x_nd, e1)
+    ewarped /= np.linalg.norm(ewarped, axis = 1)[:, None]
+
+    normals = y_md + .1*e2
+    warped_normals = xwarped_nd + .1*ewarped
+    linesx = np.c_[y_md[:,0], normals[:,0]]
+    linesy = np.c_[y_md[:,1], normals[:,1]]
+    warped_linesx = np.c_[xwarped_nd[:,0], warped_normals[:,0]]
+    warped_linesy = np.c_[xwarped_nd[:,1], warped_normals[:,1]]
+    for i, j in zip(linesx, linesy):
+        plt.plot(i, j, color = 'y')
+    for i, j in zip(warped_linesx, warped_linesy):
+        plt.plot(i, j, color = 'r')
+
+    plt.draw()
+
 
 def plot_tps_registration_2d(x_nd, y_md, f, x_color, y_color, xwarped_color):
     # set interactive
@@ -328,6 +346,47 @@ def plot_correspondence(x_nd, y_nd):
     ax.add_collection(lc)
     plt.draw()
 
+def plot_corr_normals(corr_nm,corr_nm_edge, y_md, eys):
+    # set interactive
+    plt.ion()
+    
+    fig = plt.figure('2d corr plot')
+    fig.clear()
+
+    wt_n = corr_nm.sum(axis=1)
+    y_md_corr = (corr_nm/wt_n[:,None]).dot(y_md)
+    
+    wt_n_edge = corr_nm_edge.sum(axis=1)
+    eys_corr = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
+    eys_corr /= np.linalg.norm(eys_corr, axis=1)[:,None]
+    #eys_corr = tps_utils.find_all_normals_naive(y_md_corr, wsize = .15, flip_away= True)
+
+
+    normals = y_md_corr + .1*eys_corr
+    linesx = np.c_[y_md_corr[:,0], normals[:,0]]
+    linesy = np.c_[y_md_corr[:,1], normals[:,1]]
+    for i, j in zip(linesx, linesy):
+        plt.plot(i, j, color = 'y')
+    plt.scatter(y_md_corr[:,0], y_md_corr[:,1], marker = 'o', color = 'g')
+
+    plt.draw()
+
+
+
+
+def rotate_point_cloud2d(pcloud, angle):
+    ty = angle*np.pi/180
+    Ry = np.array([[np.cos(ty), -np.sin(ty)], [np.sin(ty), np.cos(ty)]])
+    Rpc = np.zeros((pcloud.shape))
+    for i in range(len(pcloud)):
+        Rpc[i] = Ry.dot(pcloud[i])
+    return Rpc
+
+def rotate_point2d(pt, angle):
+    ty = angle*np.pi/180
+    Ry = np.array([[np.cos(ty), -np.sin(ty)], [np.sin(ty), np.cos(ty)]])
+    Rp = Ry.dot(pt)
+    return Rp
 
 
 

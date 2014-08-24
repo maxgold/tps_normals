@@ -555,12 +555,50 @@ def fit_ThinPlateSpline_corr(x_nd, y_md, corr_nm, bend_coef, rot_reg, x_weights 
             wt_n=wt_n[:,None]*x_weights
         else:
             wt_n=wt_n*x_weights
-    #f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = bend_coef, wt_n = wt_n, rot_coef = rot_reg)
-    f = fit_KrigingSpline(x_nd, x_nd, x_nd, y_md, y_md, bend_coef = bend_coef, wt_n = wt_n, normal_coef = 0)
-    f._bend_coef = bend_coef
+    f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = bend_coef, wt_n = wt_n, rot_coef = rot_reg)
+    f = fit_KrigingSpline(x_nd, x_nd, x_nd, xtarg_nd, y_md, bend_coef = bend_coef, wt_n = wt_n, normal_coef = 0, rot_coefs = rot_reg)
+    #f._bend_coef = bend_coef
     f._wt_n = wt_n
     f._rot_coef = rot_reg
     f._cost = tps.tps_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
+    return f
+
+def fit_KrigingSpline_corr(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge, bend_coef, rot_reg, normal_coef, x_weights = None):
+    #Need to add Epts
+    wt_n = corr_nm.sum(axis=1)
+    wt_n_edge = corr_nm_edge.sum(axis=1)
+    if np.any(wt_n == 0):
+        inlier = wt_n != 0
+        x_nd = x_nd[inlier,:]
+        wt_n = wt_n[inlier,:]
+        x_weights = x_weights[inlier]
+        xtarg_nd = (corr_nm[inlier,:]/wt_n[:,None]).dot(y_md)
+    elif np.any(wt_n_edge == 0):
+        inlier = wt_n_edge != 0
+        x_nd = x_nd[inlier,:]
+        wt_n_edge = wt_n_edge[inlier,:]
+        x_weights = x_weights[inlier]
+        xtarg_nd_edge = (corr_nm_edge[inlier,:]/wt_n_edge[:,None]).dot(y_md)
+    else:
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        xtarg_nd_edge = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
+    if x_weights is not None:
+        if x_weights.ndim > 1:
+            wt_n=wt_n[:,None]*x_weights
+        else:
+            wt_n=wt_n*x_weights
+    if normal_coef != 0:
+        wt_nn = np.r_[wt_n, wt_n_edge]
+    else:
+        wt_nn = wt_n
+    #f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = bend_coef, wt_n = wt_n, rot_coef = rot_reg)
+    #ipy.embed()
+    f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, xtarg_nd_edge, bend_coef = bend_coef, wt_n = wt_nn, normal_coef = normal_coef, rot_coefs = rot_reg)
+    f._bend_coef = bend_coef
+    f._wt_n = wt_n
+    f._rot_coef = rot_reg
+    #below could be buggy
+    #f._cost = tps.krig_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
     return f
 
 def compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize):
@@ -623,50 +661,40 @@ def tps_rpm_curvature_rpm_joint(x_nd, y_md, orig_source = None, orig_target = No
     #ipy.embed()
     return fc, f
 #@profile
-def tps_rpm_EM(x_nd, y_md,  n_iter=20, T_init=.1,  T_final=.01, bend_init=.1, bend_final=.01, rot_reg = 1e-5, 
+def tps_rpm_EM(x_nd, y_md,  n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01, rot_reg = 1e-5, 
              outlierfrac = 1e-2, EM_iter = 5, f_init = None, outlierprior = .1, plotting = False, angle = 0,
-             square_size = 0, circle_rad = 0):
+             square_size = 0, circle_rad = 0, wsize = .1):
     _,d=x_nd.shape
-    Ts = loglinspace(T_init, T_final, n_iter)
-    Bs = loglinspace(bend_init, bend_final, n_iter)
+    temps = loglinspace(temp_init, temp_final, n_iter)
+    bend_coefs = loglinspace(bend_init, bend_final, n_iter)
     if f_init is not None: 
         f = f_init  
     else:
         f = ThinPlateSpline(d)
 
-    fig1 = plt.figure("target_points")
-    #fig2 = plt.figure("warped_points")
+    e1 = tps_utils.find_all_normals_naive(x_nd, wsize=wsize, flip_away=True)
+    e2 = tps_utils.find_all_normals_naive(y_md, wsize=wsize, flip_away=True)
 
     for i in xrange(n_iter):
         for j in range(EM_iter):
             print i,j
-            f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, Ts[i], Bs[i], rot_reg, outlierprior)
+            f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, temps[i], bend_coefs[i], rot_reg, outlierprior)
+        #ipy.embed()
         if plotting and i%plotting==0:
-            #plot_grabs_two(f, x_nd, angle)
-            #if square_size and circle_rad:
-            #    plot_box_circle(f, square_size, circle_rad, angle, corr = corr_nm, Y = y_md)
-            #elif rope_plotting:
-            #    plot_house(f, x0sr, x1sr, x2sr, x3sr, x4sr, 30, corr_nm, y_md)
-            #plt.show()
-            plt.figure("target_points")
-            fig1.clear()
-            plt.scatter(y_md[:,0], y_md[:,1])    
-            #plt.figure("warped_points")
-            #fig2.clear()
-            #p_plt.plot_warped_grid_2d(f.transform_points, np.array([0,0]), np.array([1,1]))
             p_plt.plot_tps_registration(x_nd, y_md, f)
+            #p_plt.plot_tps_registration_normals(x_nd, y_md, e1, e2, f, wsize = .1)
 
 
     #ipy.embed()
     return f, corr_nm
 
 #@profile
-def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, T_init=.1,  T_final=.01, bend_init=.1, bend_final=.01,
+def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01,
                      rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, angle = 0,
                      square_size = 0, circle_rad = 0):
     _,d=x_nd.shape
-    Ts = loglinspace(T_init, T_final, n_iter)
-    Bs = loglinspace(bend_init, bend_final, n_iter)
+    temps = loglinspace(temp_init, temp_final, n_iter)
+    bend_coefs = loglinspace(bend_init, bend_final, n_iter)
     if f_init is not None: 
         f = f_init  
     else:
@@ -692,18 +720,11 @@ def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None,
     for i in xrange(n_iter):
         for j in range(EM_iter):
             print i, j
-            f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, Ts[i], Bs[i], rot_reg, outlierprior, curve_cost = curve_cost, beta = beta)
+            f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, temps[i], bend_coefs[i], rot_reg, outlierprior, curve_cost = curve_cost, beta = beta)
         #ipy.embed()
         if plotting and i%plotting==0:
-            p_plt.plot_warped_grid_2d(f, np.array([0,0], np.array([1,1])))
-
-            #plot_grabs_two(f, x_nd, angle)
-
-            #if square_size and circle_rad:
-            #    plot_box_circle(f, square_size, circle_rad, angle, corr = corr_nm, Y = y_md)
-            #else:
-            #    plot_house(f, x0sr, x1sr, x2sr, x3sr, x4sr, 30, corr_nm, y_md)
-            plt.show()
+            p_plt.plot_tps_registration(x_nd, y_md, f)
+            #p_plt.plot_tps_registration_normals(x_nd, y_md, e1, e2, f, wsize = .1)
   
             
     #ipy.embed()
@@ -734,78 +755,43 @@ def tps_rpm_curvature_prior2(x_nd, y_md, orig_source = None, orig_target = None,
             print i, j
             f, corr_nm = EM_step_curves(f, x_nd, y_md, outlierfrac, Ts[i], Bs[i], rot_reg, outlierprior, beta = beta)
         if plotting and i%plotting==0:
-            if square_size and circle_rad:
-                plot_box_circle(f, square_size, circle_rad, angle, corr = corr_nm, Y = y_md)
-            else:
-                plot_house(f, x0sr, x1sr, x2sr, x3sr, x4sr, 30, corr_nm, y_md)
-            plt.show()
+            p_plt.plot_tps_registration(x_nd, y_md, f)
+            #p_plt.plot_tps_registration_normals(x_nd, y_md, e1, e2, f, wsize = .1)
     #ipy.embed()
     return f, corr_nm
 
 
-def tps_rpm_normals_prior(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, T_init=.1,  T_final=.01, bend_init=.1, bend_final=.01,
-                     rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, angle = 0,
-                     normal_init = 5, normal_final = .5, square_size = 0, circle_rad = 0):
+def tps_rpm_normals_prior(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01,
+                     rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False,
+                    normal_weight_init = 5, normal_weight_final = .5):
     
     _,d=x_nd.shape
-    Ts = loglinspace(T_init, T_final, n_iter)
-    Bs = loglinspace(bend_init, bend_final, n_iter)
-    Ns = loglinspace(normal_init, normal_final, n_iter)
+    temps = loglinspace(temp_init, temp_final, n_iter)
+    bend_coefs = loglinspace(bend_init, bend_final, n_iter)
+    normal_temps = loglinspace(normal_weight_init, normal_weight_final, n_iter)
+
     if f_init is not None: 
         f = f_init  
     else:
-        f = ThinPlateSpline(d)
+        f = fit_KrigingSpline(x_nd, x_nd, x_nd, x_nd, x_nd, normal_coef = 0)
         # f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
-
-    x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 1.5,]), np.array([0,1])
-    x0sr, x1sr, x2sr, x3sr, x4sr = rotate_point2d(x0s, angle),rotate_point2d(x1s, angle),rotate_point2d(x2s, angle),rotate_point2d(x3s, angle),rotate_point2d(x4s, angle)
-    number_points = 30
-
     if orig_source is None:
         orig_source = x_nd
     if orig_target is None:
         orig_target = y_md
-    fig = plt.figure('tps_rpm_normals')
-    bottom_row = np.c_[np.linspace(x0s[0], x1s[0], number_points), np.linspace(x0s[1], x1s[1], number_points)]
-    right_column = np.c_[np.linspace(x1s[0], x2s[0], number_points), np.linspace(x1s[1], x2s[1], number_points)]
-    right_diagonal = np.c_[np.linspace(x2s[0], x3s[0], number_points), np.linspace(x2s[1], x3s[1], number_points)]
-    left_diagonal = np.c_[np.linspace(x3s[0], x4s[0], number_points), np.linspace(x3s[1], x4s[1], number_points)]
-    left_column = np.c_[np.linspace(x4s[0], x0s[0], number_points), np.linspace(x4s[1], x0s[1], number_points)]
-
+    
+    exs = tps_utils.find_all_normals_naive(x_nd, wsize=wsize, flip_away=True)
+    eys = tps_utils.find_all_normals_naive(y_md, wsize=wsize, flip_away=True)
 
     
     for i in xrange(n_iter):
         for j in range(EM_iter):
             print i, j
-            f, corr_nm = EM_step_normals(f, x_nd, y_md, outlierfrac, Ts[i], Bs[i], Ns[i], rot_reg, outlierprior, beta = beta)
+            f, corr_nm = EM_step_normals(f, x_nd, y_md, exs, eys, outlierfrac, temps[i], bend_coefs[i], normal_temps[i], rot_reg, outlierprior, beta = beta)
         if plotting and i%plotting==0:
-            #if square_size and circle_rad:
-            #    plot_box_circle(f, square_size, circle_rad, angle, corr = corr_nm, Y = y_md)
-            #else:
-            #plot_house(f, x0sr, x1sr, x2sr, x3sr, x4sr, 30, corr_nm, y_md)
-        
-            p_plt.plot_warped_grid_2d(f.transform_points, np.array([0,0]), np.array([1,1]))
-            """
-            f1 =f
-            
-            fig.clear()
-
-            f1bottom_row = f1.transform_points(bottom_row)
-            f1right_column = f1.transform_points(right_column)
-            f1right_diagonal = f1.transform_points(right_diagonal)
-            f1left_diagonal = f1.transform_points(left_diagonal)
-            f1left_column = f1.transform_points(left_column)
-
-            plt.scatter(f1bottom_row[:,0], f1bottom_row[:,1], color = 'g')
-            plt.scatter(f1right_column[:,0], f1right_column[:,1], color = 'y')
-            plt.scatter(f1left_column[:,0], f1left_column[:,1], color = 'r')
-            plt.scatter(f1left_diagonal[:,0], f1left_diagonal[:,1], color = 'b')
-            plt.scatter(f1right_diagonal[:,0], f1right_diagonal[:,1], color = 'g')
-
-            
-            plt.draw()
-            """
-    #ipy.embed()
+            p_plt.plot_tps_registration(x_nd, y_md, f)
+            p_plt.plot_tps_registration_normals(x_nd, y_md, exs, eys, f, wsize = .1)
+    
     return f, corr_nm
 
 def tps_rpm_normals_curves(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, T_init=.1,  T_final=.01, bend_init=.1, bend_final=.01,
@@ -822,26 +808,62 @@ def tps_rpm_normals_curves(x_nd, y_md, orig_source = None, orig_target = None, n
         f = ThinPlateSpline(d)
         # f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
 
-    x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 1.5,]), np.array([0,1])
-    x0sr, x1sr, x2sr, x3sr, x4sr = rotate_point2d(x0s, angle),rotate_point2d(x1s, angle),rotate_point2d(x2s, angle),rotate_point2d(x3s, angle),rotate_point2d(x4s, angle)
+    
 
     if orig_source is None:
         orig_source = x_nd
     if orig_target is None:
         orig_target = y_md
+    e1 = tps_utils.find_all_normals_naive(x_nd, wsize=wsize, flip_away=True)
+    e2 = tps_utils.find_all_normals_naive(y_md, wsize=wsize, flip_away=True)
 
     for i in xrange(n_iter):
         for j in range(EM_iter):
             print i, j
             f, corr_nm = EM_step_normals_curves(f, x_nd, y_md, outlierfrac, Ts[i], Bs[i], Ns[i], rot_reg, outlierprior, beta = beta)
         if plotting and i%plotting==0:
-            #if square_size and circle_rad:
-            #    plot_box_circle(f, square_size, circle_rad, angle, corr = corr_nm, Y = y_md)
-            #else:
-            plot_house(f, x0sr, x1sr, x2sr, x3sr, x4sr, 30, corr_nm, y_md)
-            plt.show()
-    #ipy.embed()
+            p_plt.plot_tps_registration(x_nd, y_md, f)
+            p_plt.plot_tps_registration_normals(x_nd, y_md, e1, e2, f, wsize = .1)
+    
     return f, corr_nm
+
+def tps_rpm_double_corr(x_nd, y_md, exs = None, eys = None, orig_source = None, orig_target = None, n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01,
+                     rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, 
+                     normal_weight_init = 5, normal_weight_final = .5, normal_coef_init = .001, normal_coef_final = .2,  flip_away=True):
+    
+    _,d=x_nd.shape
+    temps = loglinspace(temp_init, temp_final, n_iter)
+    bend_coefs = loglinspace(bend_init, bend_final, n_iter)
+    edge_temps = loglinspace(normal_weight_init, normal_weight_final, n_iter)
+    if normal_coef_init + normal_coef_final != 0:
+        normal_coefs = loglinspace(normal_coef_init, normal_coef_final, n_iter)
+    else:
+        normal_coefs = np.zeros(n_iter)
+    if f_init is not None: 
+        f = f_init  
+    else:
+        f = fit_KrigingSpline(x_nd, x_nd, x_nd, x_nd, x_nd, normal_coef = 0)
+        # f.trans_g = np.median(y_md,axis=0) - np.median(x_nd,axis=0)
+    if orig_source is None:
+        orig_source = x_nd
+    if orig_target is None:
+        orig_target = y_md
+    
+    if exs is None:
+        exs = tps_utils.find_all_normals_naive(x_nd, wsize=wsize, flip_away=flip_away)
+    if eys is None:
+        eys = tps_utils.find_all_normals_naive(y_md, wsize=wsize, flip_away=flip_away)
+    
+    for i in xrange(n_iter):
+        for j in range(EM_iter):
+            print i, j
+            f, corr_nm, corr_nm_edge = EM_step_double_corr(f, x_nd, y_md, exs, eys, outlierfrac, temps[i], edge_temps[i], bend_coefs[i], normal_coefs[i], rot_reg, outlierprior, beta = beta)
+        if plotting and i%plotting==0:
+            p_plt.plot_tps_registration(x_nd, y_md, f)
+            p_plt.plot_tps_registration_normals(x_nd, y_md, exs, eys, f, wsize = .1)
+            p_plt.plot_corr_normals(corr_nm, corr_nm_edge, y_md, eys)
+    
+    return f, corr_nm, corr_nm_edge
 
 #@profile
 def EM_step(f, x_nd, y_md, outlierfrac, temp, bend_coef, rot_reg, outlierprior, curve_cost = None, beta = 1):
@@ -905,7 +927,7 @@ def EM_step_curves(f, x_nd, y_md, outlierfrac, temp, bend_coef, rot_reg, outlier
 
 
 
-def EM_step_normals(f, x_nd, y_md, outlierfrac, temp, bend_coef, normal_weight, rot_reg, outlierprior, curve_cost = None, beta = 1):
+def EM_step_normals(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_temp, rot_reg, outlierprior, curve_cost = None, beta = 1):
     n,_ = x_nd.shape
     m,_ = y_md.shape
     x_priors = np.ones(n)*outlierprior    
@@ -916,10 +938,13 @@ def EM_step_normals(f, x_nd, y_md, outlierfrac, temp, bend_coef, normal_weight, 
     T = temp
     prob_nm = np.exp( -dist_nm / T )
 
-    normals_cost = compute_normals_cost(xwarped_nd, y_md, y_md, y_md, .1)
-    
+    ewarped_nd = f.transform_normals(x_nd, exs)
+    ewarped_nd /= nlg.norm(x_nd, axis=1)[:,None]
+    #normals_cost = compute_normals_cost(xwarped_nd, y_md, y_md, y_md, .1)
+    normals_cost = ssd.cdist(ewarped_nd, eys, 'sqeuclidean')
+
     beta = beta
-    pi = np.exp(-beta*normals_cost/normal_weight)
+    pi = np.exp(-beta*normals_cost/normal_temp)
     print np.max(pi), np.min(pi)
     #pi /= pi.max() # we can do better I think
     #import IPython as ipy
@@ -984,10 +1009,57 @@ def EM_step_normals_curves(f, x_nd, y_md, outlierfrac, temp, bend_coef, normal_w
     print np.sum(np.abs(f.transform_points(x_nd) - y_md))/len(y_md)
 
     return f, corr_nm
+
+def EM_step_double_corr(f, x_nd, y_md, exs, eys, outlierfrac, temp, normal_temp, bend_coef, normal_coef, rot_reg, outlierprior, beta = 1):
+    n,_ = x_nd.shape
+    m,_ = y_md.shape
+    x_priors = np.ones(n)*outlierprior
+    y_priors = np.ones(m)*outlierprior
+
+    xwarped_nd = f.transform_points(x_nd)
+    dist_nm = ssd.cdist(xwarped_nd, y_md, 'sqeuclidean')
+    t = temp
+    prob_nm = np.exp(-dist_nm/t)
+
+    ewarped_nd = f.transform_normals(x_nd, exs)
+    ewarped_nd = tps_utils.flip_normals(x_nd, x_nd, exs, xwarped_nd, ewarped_nd)
+    ewarped_nd /= nlg.norm(ewarped_nd, axis=1)[:,None]
+    ewarped_nd_flipped = -ewarped_nd
+    dist_nm_edge_warped = ssd.cdist(ewarped_nd, eys, 'sqeuclidean')
+    dist_nm_edge_flipped = ssd.cdist(ewarped_nd_flipped, eys, 'sqeuclidean')
+    dist_nm_edge = np.minimum(dist_nm_edge_warped, dist_nm_edge_flipped)
+
+    nt = normal_temp
+    prob_nm_edge = np.exp(-dist_nm_edge_warped/nt)
+    #prob_nm_edge = np.exp(-dist_nm_edge/nt)
     
 
+    corr_nm, r_N, _ = balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac)
+    corr_nm += 1e-9
+    wt_n = corr_nm.sum(axis=1)
+
+    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+
+    corr_nm_edge, r_N_norm, _ = balance_matrix3(prob_nm_edge, 10, x_priors, y_priors, outlierfrac)
+    corr_nm_edge += 1e-9
+    wt_n_edge = corr_nm_edge.sum(axis=1)
+
+    print np.max(corr_nm_edge), np.min(corr_nm_edge)
+
+    targ_nd_edge = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
+    targ_nd_edge /= nlg.norm(targ_nd_edge, axis=1)[:,None]
+    #targ_nd_edge = tps_utils.find_all_normals_naive(targ_nd, wsize = .15, flip_away= True)
+    #normal_coef = 0
+    f = fit_KrigingSpline_corr(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge, bend_coef, rot_reg, normal_coef, x_weights = None)
+    
+    return f, corr_nm, corr_nm_edge
+
+def close_windows():
+    for i in range(20):
+        plt.close()
+
 def main():
-    from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in, gen_house, gen_box_circle
+    from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in, gen_house, gen_box_circle, gen_circle_points
     from tn_eval.tps_utils import find_all_normals_naive
     from mpl_toolkits.mplot3d import Axes3D
     import matplotlib.pyplot as plt
@@ -1017,74 +1089,85 @@ def main():
     circle_rad1 = .5
     circle_rad2 = .5
 
-    angle = 10
+    angle = 90
 
     x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 3]), np.array([0,1])
-    pts1 = gen_house(x0s, x1s, x2s, x3s, x4s, number_points)
-    #pts1 = gen_box_circle(square_size1, circle_rad1, number_points = number_points)
-    #pts2 = gen_box_circle(square_size2, circle_rad2, number_points = number_points)
+    #pts1 = gen_house(x0s, x1s, x2s, x3s, x4s, number_points)
+    pts1 = gen_box_circle(square_size1, circle_rad1, number_points = number_points)
+    pts2 = gen_box_circle(square_size2, circle_rad2, number_points = number_points)
+    #pts1 = gen_circle_points(.5, 30)
+    #pts2 = gen_circle_points(.5, 30)
     #pts1 = grabs_two.old_cloud[:,:3]
     #pts2 = grabs_two.new_cloud[:,:3]
     #big_old_cloud = np.random.random((554, 3))
     #big_new_cloud = np.random.random((8972, 3))
     #pts1r = np.random.permutation(pts1)
     pts1r = rotate_point_cloud2d(pts1, angle)
-    x0sr, x1sr, x2sr, x3sr, x4sr = rotate_point2d(x0s, angle),rotate_point2d(x1s, angle),rotate_point2d(x2s, angle),rotate_point2d(x3s, angle),rotate_point2d(x4s, angle)
+    #x0sr, x1sr, x2sr, x3sr, x4sr = rotate_point2d(x0s, angle),rotate_point2d(x1s, angle),rotate_point2d(x2s, angle),rotate_point2d(x3s, angle),rotate_point2d(x4s, angle)
 
-    x0t, x1t, x2t, x3t, x4t = np.array([0,0]), np.array([1,0]), np.array([1,.5]), np.array([.5, 1.5]), np.array([0,.5])
-    pts2 = gen_house(x0t, x1t, x2t, x3t, x4t, number_points)
+    #x0t, x1t, x2t, x3t, x4t = np.array([0,0]), np.array([1,0]), np.array([1,.5]), np.array([.5, 1.5]), np.array([0,.5])
+    #pts2 = gen_house(x0t, x1t, x2t, x3t, x4t, number_points)
 
-    EM_iter = 1
+    EM_iter = 10
 
     beta = 20 #20 works for 90 rotation
-    wsize = .1
+    wsize = .15
     plotting = 1
     
-    T_init = .5
-    T_final = .005
-    bend_init = 1e4 # 1e2 works for 90 rotation
-    bend_final = .001
-    normal_init = 10
-    normal_final = .1
+    temp_init = 1
+    temp_final = .0005
+    bend_init = 1e2 #1e2 works for 90 rotation
+    bend_final = .1
+    normal_weight_init = 2
+    normal_weight_final = .1
+    normal_coef_init = 0.001
+    normal_coef_final = 0.01
 
+    exs = find_all_normals_naive(pts1r, wsize = wsize, flip_away=True)
+    eys = find_all_normals_naive(pts2, wsize = wsize, flip_away=True)
     #ipy.embed()
 
-    n = 4, 'I'
+    n = 7 , 'I'
 
     if 1 in n:
-        f1 , corr1 = tps_rpm_curvature_prior1(pts1r, pts2, orig_source = big_old_cloud, orig_target = big_new_cloud, n_iter = 20, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1)
+        f1 , corr1 = tps_rpm_curvature_prior1(pts1r, pts2,  n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1)
         #plot_house(f1, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
-        #plot_box_circle(f1, square_size1, circle_rad1, angle, number_points = number_points)
+        plot_box_circle(f1, square_size1, circle_rad1, angle, number_points = number_points)
         #plot_grabs_two(f1, pts1r, angle)
 
     if 2 in n:
         f2 , corr2 = tps_rpm_curvature_prior2(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1)
-        #plot_house(f2, x0s, x1sr, x2sr, x3sr, x4sr, number_points)
+        plot_house(f2, x0s, x1sr, x2sr, x3sr, x4sr, number_points)
         #plot_box_circle(f2, square_size1, circle_rad1, angle, number_points = number_points)
-        plot_grabs_two(f2, pts1r, angle)
+        #plot_grabs_two(f2, pts1r, angle)
 
     if 3 in n:
         f3, corr3 = tps_rpm_bij(pts1r,pts2, reg_init = T_init, rad_init = bend_init)
-        #plot_house(f3, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
+        plot_house(f3, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
         #plot_box_circle(f3, square_size1, circle_rad1, angle, number_points = number_points)
-        plot_grabs_two(f3, pts1r, angle)
+        #plot_grabs_two(f3, pts1r, angle)
 
     if 4 in n:
-        f4,corr4 = tps_rpm_EM(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1)
+        f4,corr4 = tps_rpm_EM(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1, wsize = wsize)
         #plot_house(f4, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
-        #plot_box_circle(f4, square_size1, circle_rad1, angle, number_points = number_points)
+        plot_box_circle(f4, square_size1, circle_rad1, angle, number_points = number_points)
         #plot_grabs_two(f4, pts1r, angle)
 
     if 5 in n:
-        f5, corr5 = tps_rpm_normals_prior(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, angle = angle, normal_init = normal_init, normal_final = normal_final,square_size = square_size1, circle_rad = circle_rad1)
-        plot_house(f5, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
-        #plot_box_circle(f5, square_size1, circle_rad1, angle, number_points = number_points)
+        f5, corr5 = tps_rpm_normals_prior(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, normal_weight_init = normal_weight_init, normal_weight_final = normal_weight_final)
+        #plot_house(f5, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
+        plot_box_circle(f5, square_size1, circle_rad1, angle, number_points = number_points)
         #plot_grabs_two(f5, pts1r, angle)
 
     if 6 in n:
         f6, corr6 = tps_rpm_normals_curves(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, T_init = T_init, T_final = T_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, angle = angle, normal_init = normal_init, normal_final = normal_final, beta = beta, square_size = square_size1, circle_rad = circle_rad1)
-        plot_house(f6, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
-        #plot_box_circle(f6, square_size1, circle_rad1, angle, number_points = number_points)
+        #plot_house(f6, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
+        plot_box_circle(f6, square_size1, circle_rad1, angle, number_points = number_points)
+        #plot_grabs_two(f6, pts1r, angle)
+    if 7 in n:
+        f7, corr7, corr_edge7 = tps_rpm_double_corr(pts1r, pts2, exs, eys, n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, normal_coef_init = normal_coef_init, normal_coef_final = normal_coef_final, plotting = plotting, normal_weight_init = normal_weight_init, normal_weight_final = normal_weight_final, beta = beta)
+        #plot_house(f7, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
+        plot_box_circle(f7, square_size1, circle_rad1, angle, number_points = number_points)
         #plot_grabs_two(f6, pts1r, angle)
 
     #hc , h = tps_rpm_curvature_rpm_joint(pts1r, pts2, n_iter = 20, T_init = T_init, bend_init = bend_init, wsize = wsize, beta = beta, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1)
@@ -1097,8 +1180,8 @@ def main():
 
     if 'I' in n:
         g = ThinPlateSpline(2)
-        plot_house(g, x0t, x1t, x2t, x3t, x4t, number_points)
-        #plot_box_circle(g, square_size1, circle_rad1, 0, number_points = number_points)
+        #plot_house(g, x0t, x1t, x2t, x3t, x4t, number_points)
+        plot_box_circle(g, square_size1, circle_rad1, 0, number_points = number_points)
         #plot_grabs_two(g, pts2, 0)
 
     plt.show()

@@ -153,7 +153,7 @@ def find_all_normals_naive (dspcloud, orig_cloud = None, wsize=0.02, flip_away=F
         p_centered = dspcloud - pmean
         _,_,VT = np.linalg.svd(p_centered, full_matrices=True)
         p_lower_dim = VT[0:dim-1,:].dot(p_centered.T).T
-        p_ld_nms = find_all_normals_naive(p_lower_dim,wsize=wsize,flip_away=flip_away,project_lower_dim=False)
+        p_ld_nms = find_all_normals_naive(p_lower_dim, orig_cloud = orig_cloud, wsize=wsize,flip_away=flip_away,project_lower_dim=False)
         return VT[0:dim-1,:].T.dot(p_ld_nms.T).T
 
     
@@ -188,7 +188,7 @@ def find_all_curvatures(dspcloud, orig_cloud = None, wsize = 0.02, project_lower
         p_centered = dspcloud - pmean
         _,_,VT = np.linalg.svd(p_centered, full_matrices=True)
         p_lower_dim = VT[0:dim-1,:].dot(p_centered.T).T
-        p_ld_nms = find_all_curvatures(p_lower_dim,wsize=wsize,flip_away=flip_away,project_lower_dim=False)
+        p_ld_nms = find_all_curvatures(p_lower_dim, orig_cloud = orig_cloud, wsize=wsize, project_lower_dim=False)
         return VT[0:dim-1,:].T.dot(p_ld_nms.T).T
 
     curvatures = np.zeros([0])
