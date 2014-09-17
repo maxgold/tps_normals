@@ -8,28 +8,6 @@ def nan2zero(x):
     np.putmask(x, np.isnan(x), 0)
     return x
 
-def solve_eqp1(H, f, A):
-    """solve equality-constrained qp
-    min tr(x'Hx) + sum(f'x)
-    s.t. Ax = 0
-    """    
-    n_vars = H.shape[0]
-    assert H.shape[1] == n_vars
-    assert f.shape[0] == n_vars
-    assert A.shape[1] == n_vars
-    n_cnts = A.shape[0]
-    
-    _u,_s,_vh = np.linalg.svd(A.T)
-    N = _u[:,n_cnts:]
-    # columns of N span the null space
-    
-    # x = Nz
-    # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
-    # NHNz + Nf = 0
-    z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
-    x = N.dot(z)
-    
-    return x
 
 def sigma (alpha, x, y = None):
 	"""
@@ -75,6 +53,7 @@ def krig_mat_landmark2 (alpha, Xs, Ys):
 def krig_kernel_mat(alpha, Xs, Epts, E1s):
 	"""
 	computes kriging kernel matrix
+	alpha is assumed to be 1.5
 	"""
 	assert Xs.shape[1] == Epts.shape[1]
 	assert E1s.shape[0] == Epts.shape[0]
@@ -112,30 +91,29 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 		S_00   = dist_mat*dist_mat_sqrt #sigma
 		
 		nXsqrt = np.sqrt(nX)
-		S_01x  = xedist*nXsqrt # dsigma/dx
-		S_01y  = yedist*nXsqrt # dsigma/dy
+		S_01x  = -3*xedist*nXsqrt # dsigma/dx
+		S_01y  = -3*yedist*nXsqrt # dsigma/dy
 
 		nEXsqrt = np.sqrt(nEX)
-		S_10x  = exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
-		S_10y  = exdist_y*nEXsqrt#dsigma/dy.T
-		#S_10x  = Exs*S_01x.T#dsigma/dx.T
-		#S_10y  = Eys*S_01y.T #dsigma/dy.T
-		
+		#S_10x  = 3*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
+		#S_10y  = 3*exdist_y*nEXsqrt#dsigma/dy.T
+		S_10x = S_01x.T
+		S_10y = S_01y.T	
 		# is copying expensive?
-		E_dist_mat1 = E_dist_mat.copy()
-		np.fill_diagonal(E_dist_mat1, 1)
 		Esqrt = np.sqrt(E_dist_mat)
-		Esqrt1 = np.sqrt(E_dist_mat1)
 
-		S_11xx = nan2zero(Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1) #dsigma/dxdy
-		S_11xy = nan2zero(Exdist*Eydist/Esqrt1) #dsigma/dxdy
-		S_11yy = nan2zero(Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1) #dsigma/dydy
+		S_11xx = -3*nan2zero(Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt) #dsigma/dxdy
+		S_11xy = -6*nan2zero(Exdist*Eydist/Esqrt) #dsigma/dxdy
+		S_11yy = -3*nan2zero(Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt) #dsigma/dydy
 
 		S_01   = Exs*S_01x + Eys*S_01y
 		S_10   = Exs.T*S_10x + Eys.T*S_10y
-		S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy) -4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy)
+		S_11   = Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy + Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy
 
-		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
+		#import IPython as ipy
+		#ipy.embed()
+
+		return np.r_[np.c_[S_00, S_01], np.c_[S_10, S_11]]
 
 	elif d==3:
 		zedist = XEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
@@ -245,7 +223,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		S_10   = Exsr.T*S_10x + Eysr.T*S_10y
 		S_11   = -2*alpha*(Exsr.T*Exs*S_11xx + Eysr.T*Eys*S_11yy) - 4*alpha*(Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy) 
 
-		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
+		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, -S_11]]
 
 	elif d==3:
 		yedist_z = YEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
@@ -319,6 +297,22 @@ def bending_energynormal(S,D, dim):
 	
 	#return np.r_[np.c_[S, D], np.c_[D.T, np.zeros((dim+1, dim+1))]]
 	return S
+
+def bending_energy_mat(S, D, pasta = 0):
+	P = D.dot(nlg.inv(D.T.dot(D)).dot(D.T))
+	l = len(P)
+	I = np.eye(l)
+	L_11 = nlg.pinv((I-P).dot(S.dot(I-P)))
+	L_11  = (L_11 + L_11.T)/2
+	_u, _s, _v = nlg.svd(L_11)
+	_s = np.maximum(_s, 0)
+	L_11 = _u.dot(np.diag(_s).dot(_v))
+	if pasta:
+		import IPython as ipy
+		#ipy.embed()
+	return S.T.dot(L_11.dot(S))
+
+
 
 def solve_eqp1_interest(H, f, A, b):
     """solve equality-constrained qp
@@ -397,6 +391,32 @@ def krig_fit_interest(Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, 
 	return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
 	#return Theta
 
+def is_psd(mat):
+	return np.all(nlg.eig(mat)[0] + 1e-10 >0)
+
+def solve_eqp1(H, f, A):
+    """solve equality-constrained qp
+    min tr(x'Hx) + sum(f'x)
+    s.t. Ax = 0
+    """    
+    n_vars = H.shape[0]
+    assert H.shape[1] == n_vars
+    assert f.shape[0] == n_vars
+    assert A.shape[1] == n_vars
+    n_cnts = A.shape[0]
+    
+    _u,_s,_vh = np.linalg.svd(A.T)
+    N = _u[:,n_cnts:]
+    # columns of N span the null space
+    
+    # x = Nz
+    # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
+    # NHNz + Nf = 0
+    z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
+    x = N.dot(z)
+    
+    return x
+
 def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef = 1, wt_n = None, rot_coefs = 1e-5):
 	# This uses euclidean difference for normals. Change it to angle difference?
 
@@ -415,22 +435,26 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 
 		S = krig_kernel_mat(alpha, Xs, Epts, Exs)
 		D = krig_mat_linear(Xs, Epts, Exs)
-		B = bending_energynormal(S, D, dim)
+		B = bending_energy_mat(S, D, pasta = 1)
 
 		Q = np.c_[S, D]
 		WQ = wt_n[:,None]*Q
 		H = Q.T.dot(WQ)
-		H[:n+m, :n+m] += bend_coef*B
+		H[:n+m, :n+m] += bend_coef*S
 
 		f = -WQ.T.dot(Y)
 
 		A = np.c_[D.T, np.zeros((dim+1, dim+1))]
 
 		Theta = solve_eqp1(H, f, A)
+		
+		import IPython as ipy
+		#ipy.embed()
+		#assert np.trace(Theta[:n+m].T.dot(B.dot(Theta[:n+m]))) > 0
 
 		return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
 	else:
-		if wt_n is None: wt_n = np.ones(n)
+		if wt_n is None: wt_n = np.ones(n)/n
 		rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
 
 
@@ -438,7 +462,10 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 
 		S = krig_mat_landmark(alpha, Xs)
 		D = np.c_[np.ones((n,1)), Xs]
-		B = bending_energynormal(S,D, dim)
+		B = bending_energy_mat(S,D)
+		#B = S
+		#import IPython as ipy		
+		#ipy.embed()
 
 		Q = np.c_[D,S]
 		WQ = wt_n[:,None]*Q
@@ -453,7 +480,20 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 
 		Theta = solve_eqp1(H, f, A)
 
+
+
+		if not np.trace(Theta[:n].T.dot(B.dot(Theta[:n]))) > 0:
+			import IPython as ipy
+			ipy.embed()
+
+		if np.allclose(np.trace(Theta[:n].T.dot(B.dot(Theta[:n]))), np.trace(Theta[:n].T.dot(S.dot(Theta[:n])))):
+			print 'weird'
+
+
 		return Theta[d+1:], Theta[0], Theta[1:d+1]
+
+
+
 
 def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 	n, dim = Xs.shape
@@ -476,194 +516,6 @@ def krig_fit3_landmark(alpha, Xs, Ys, bend_coef = .1, wt_n = None):
 	Theta = solve_eqp1(H, f, A)
 
 	return Theta[:n], Theta[n], Theta[n+1:]
-
-#Doesn't matter
-
-def krig_objective2(Xs, Ys, Epts, Exs, Eys, bend_coef, alpha = 1.5, normal_coef = 1):
-	"""
-	Theta is coefficients of function
-	Xs are source points
-	Ys are target points
-	B is bending energy matrix
-	"""
-	n, dim = Xs.shape
-	m, _ = Exs.shape
-	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-	wt_n[n:]*=normal_coef
-	#if wt_n is None: wt_n = np.ones(n+m)
-
-	Y = np.r_[Ys, Eys]
-
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear2(Xs, Epts)
-	B = bending_energy(S, D)
-
-	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
-	WQ = wt_n[:,None]*Q
-	H = Q.T.dot(WQ)
-	H[:n+m, :n+m] += bend_coef*B
-	f = -WQ.T.dot(Y)
-
-	A = np.c_[D.T, np.zeros((6, 6))]
-
-	Theta = solve_eqp1(H, f, A)
-
-	targ = np.r_[Ys, Eys, np.zeros((6, dim))]
-
-	K = np.r_[np.c_[S, D], np.c_[D.T, np.zeros((6, 6))]]
-	
-	point_diff = K.dot(Theta) - targ
-	point_cost = np.sum(np.sum(np.abs(point_diff)**2, axis=-1)**.5)
-	ba = Theta[:n+m]
-	bend_cost = bend_coef*np.trace(ba.T.dot(B).dot(ba))
-
-	return point_cost + bend_cost
-
-
-def plot_objective(bend_coefs):
-	cost = []
-	for bend_coef in bend_coefs:
-		cost.append(krig_objective(Xs, Ys, Epts, Exs, Eys, bend_coef))
-	return cost
-
-
-
-
-def krig_test(n_iter, alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None):
-	n,dim = Xs.shape
-	m,_ = Exs.shape
-	#wt_n = 1.0/(n+m)
-	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-	wt_n[n:]*=normal_coef
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D1 = np.c_[np.ones((n,1)), Xs]
-	D2 = np.c_[np.zeros((m,1)), np.ones((m,dim))]
-	D = np.r_[D1, D2]
-
-	K = np.r_[np.c_[S, D], np.c_[D.T, np.zeros((dim+1, dim+1))]]
-	for i in range(n_iter-1):
-		Y = np.r_[Ys, Eys]
-
-		S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-		D1 = np.c_[np.ones((n,1)), Xs]
-		D2 = np.c_[np.zeros((m,1)), np.ones((m,dim))]
-		D = np.r_[D1, D2]
-		B = bending_energy(S, D)
-
-		Q = np.c_[S, D]
-		#WQ = wt_n[:, None]*Q
-		WQ = wt_n[:,None]*Q
-		H = Q.T.dot(WQ)
-		H[:n+m, :n+m] += bend_coef*B
-		f = -WQ.T.dot(Y)
-
-		A = np.c_[D.T, np.zeros((dim+1, dim+1))]
-
-		Theta = solve_eqp1(H, f, A)
-
-		print np.abs(np.sum(K.dot(Theta) - np.r_[Ys, Eys, np.zeros((3,2))]))
-
-		Ys = K.dot(Theta)[:n, :]
-		Eys = K.dot(Theta)[n:n+m,:]
-
-		
-	
-	Y = np.r_[Ys, Eys]
-
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D1 = np.c_[np.ones((n,1)), Xs]
-	D2 = np.c_[np.zeros((m,1)), np.ones((m,dim))]
-	D = np.r_[D1, D2]
-	B = bending_energy(S, D)
-
-	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
-	WQ = wt_n[:,None]*Q
-	H = Q.T.dot(WQ)
-	H[:n+m, :n+m] += bend_coef*B
-	f = -WQ.T.dot(Y)
-
-	A = np.c_[D.T, np.zeros((dim+1, dim+1))]
-
-	Theta = solve_eqp1(H, f, A)
-	return Theta, K.dot(Theta) - np.r_[Ys, Eys, np.zeros((3,2))]
-
-
-
-def krig_fit2t(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .1, normal_coef = 1, wt_n = None):
-	n,dim = Xs.shape
-	m,_ = Exs.shape
-	#wt_n = 1.0/(n+m)
-	if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-	wt_n[n:]*=normal_coef
-	#if wt_n is None: wt_n = np.ones(n+m)
-
-	Y = np.r_[Ys, Eys]
-
-	S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-	D = krig_mat_linear2(Xs, Epts)
-	B1 = bending_energy(S, D)
-	SD = np.c_[S,D]
-	B = SD.T.dot(B1).dot(SD)
-
-	Q = np.c_[S, D]
-	#WQ = wt_n[:, None]*Q
-	WQ = wt_n[:,None]*Q
-	H = Q.T.dot(WQ)
-	#H[:n+m, :n+m] += bend_coef*B
-	H += bend_coef*B
-	f = -WQ.T.dot(Y)
-
-	A = np.c_[D.T, np.zeros((6, 6))]
-
-	Theta = solve_eqp1(H, f, A)
-
-
-	K = np.r_[np.c_[S, D], np.c_[D.T, np.zeros((6,6))]]
-
-	targ = np.r_[Ys, Eys, np.zeros((6, dim))]
-
-	return Theta[:n+m], Theta[n+m:]
-
-
-
-#derivative testing
-
-def derivativex(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,0] = xpert[:,0] + epsilon
-	return (f(xpert) - f(x))/epsilon
-
-def derivativey(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,1] = xpert[:,1] + epsilon
-	return (f(xpert)-f(x))/epsilon
-
-def derivativez(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,2] += epsilon
-	return (f(xpert) - f(x))/epsilon
-
-def derivativexx(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,0] = xpert[:,0] + epsilon
-	return (derivativex(f, xpert, epsilon) - derivativex(f,x,epsilon))/epsilon
-
-def derivativexy(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,1] = xpert[:,1] + epsilon
-	return (derivativex(f, xpert, epsilon) - derivativex(f,x,epsilon))/epsilon
-
-def derivativeyx(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,0] = xpert[:,0] + epsilon
-	return (derivativey(f, xpert, epsilon) - derivativey(f,x,epsilon))/epsilon
-
-def derivativeyy(f, x, epsilon = 1e-6):
-	xpert = x.copy()
-	xpert[:,1] = xpert[:,1] + epsilon
-	return (derivativey(f, xpert, epsilon) - derivativey(f,x,epsilon))/epsilon
 
 #normals finding
 
@@ -691,90 +543,6 @@ def find_rope_tangents(pts1):
 
 
 
-"""
-
-n,dim = Xs.shape
-m,d  = Exs.shape
-
-X = np.tile(Xs, (1,n)).reshape(n, n, 1, d)
-XX = np.tile(Xs, (n, 1)).reshape(n, n, 1, d)
-XXdiff = X-XX # [
-xxdist = XXdiff[0:, 0:, 0, 0]
-yxdist = XXdiff[0:, 0:, 0, 1]
-dist_mat = ssd.squareform(ssd.pdist(Xs))**2 #squared norm between Xs
-
-X = np.tile(Xs, (1,m)).reshape(n, m, 1, d)
-EX = np.tile(Epts, (n, 1)).reshape(n, m, 1, d)
-XEdiff = X-EX # [[[x_1 - e_1], ..., [x_1 - e_m]], ..., [[x_n - e_1], ..., [x_n - e_m]]]
-nX = np.sum(np.abs(XEdiff)**2,axis=-1).reshape(n,m)
-xedist = XEdiff[0:, 0:, 0, 0] # difference in x coordinates of x_i and e_j i.e. x_i_x - e_j_x
-yedist = XEdiff[0:, 0:, 0, 1] # difference in y coordinates of x_i and e_j i.e. x_i_x - e_j_x
-
-S_00   = (-1)**(floor(alpha)+1)*dist_mat**(alpha) #sigma
-
-S_01x  = -2*alpha*(-1)**(floor(alpha)+1)*xedist*nX**(alpha-1)
-S_01y  = -2*alpha*(-1)**(floor(alpha)+1)*yedist*nX**(alpha-1)
-
-S_10x  = 2*alpha*(-1)**(floor(alpha)+1)*xxdist*dist_mat**(alpha-1)
-S_10y  = 2*alpha*(-1)**(floor(alpha)+1)*yxdist*dist_mat**(alpha-1)
-
-S_11xx = -2*alpha*(-1)**(floor(alpha)+1)*(nX**(alpha-1) + 2*(alpha-1)*nan2zero(xedist**2*nX**(alpha-2))) #dsigma/dxdy
-S_11xy = -4*alpha*(alpha-1)*(-1)**(floor(alpha)+1)*nan2zero(xedist*yedist*nX**(alpha-2)) #dsigma/dxdy
-S_11yy = -2*alpha*(-1)**(floor(alpha)+1)*(nX**(alpha-1) + 2*(alpha-1)*nan2zero(yedist**2*nX**(alpha-2))) #dsigma/dydy
-
-
-S_11x  = (S_11xx + S_11xy)
-S_11y  = (S_11xy + S_11yy)
-
-S_01   = S_01x + S_01y
-S_10   = S_10x + S_10y
-S_11   = S_11x + S_11y
-
-
-D1 = np.c_[np.ones((n,1)), Xs, Xs[:,0][:,None]**2, Xs[:,0][:,None]*Xs[:,1][:,None], Xs[:, 1][:,None]**2]
-D2 = np.c_[np.zeros((m,1)), np.ones((m,d)), 2*Epts[:,0][:,None], Epts[:,0][:,None] + Epts[:,1][:,None], 2*Epts[:,1][:,None] ]
-
-S1 = np.c_[S_00, S_01]
-S2 = np.c_[S_10, S_11]
-
-
-dist_mat = ssd.cdist(pts, pts1)**2
-
-assert Xs.shape[1] == Exs.shape[1]
-assert Xs.shape[1] == Ys.shape[1]
-
-n,dim = Xs.shape
-m,_ = Exs.shape
-if wt_n is None: wt_n = np.ones(n+m)/(n+m)
-wt_n[n:]*=normal_coef
-rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
-
-Y = np.r_[Ys, Eys]
-
-S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-D = krig_mat_linear(Xs, Epts, Exs)
-B = bending_energynormal(S, D, dim)
-
-Q = np.c_[S, D]
-WQ = wt_n[:,None]*Q
-H = Q.T.dot(WQ)
-H[:n+m, :n+m] += bend_coef*B
-#H[n+m+1:, n+m+1:] += np.diag(rot_coefs)
-f = -WQ.T.dot(Y)
-#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this
-
-A = np.c_[D.T, np.zeros((dim+1, dim+1))]
-
-Theta = solve_eqp1(H, f, A)
-
-
-
-"""
-
-
-
-
-
 def main():
     from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in
     from tn_eval.tps_utils import find_all_normals_naive
@@ -797,130 +565,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-"""
-n, d = Xs.shape
-m, _ = Epts.shape
-X = np.tile(Xs, (1,m)).reshape(n, m, 1, d)
-EX = np.tile(Epts, (n, 1)).reshape(n, m, 1, d)
-XEdiff = X-EX # [[[x_1 - e_1], ..., [x_1 - e_m]], ..., [[x_n - e_1], ..., [x_n - e_m]]]
-
-XE = np.tile(Epts, (1,n)).reshape(m,n,1,d)
-X = np.tile(Xs, (m, 1)).reshape(m, n, 1, d)
-EXdiff = XE-X # [[[ex_1 - x_1], ..., [ex_1 - x_n]], ..., [[ex_m - x_1], ..., [ex_m - x_m]]]
-	
-E_xs = np.tile(Epts, (1,m)).reshape(m, m, 1, d) 
-E_ys = np.tile(Epts, (m,1)).reshape(m, m, 1, d)
-Ediff = E_xs - E_ys #[[e1-e1], ..., [ e_m - e_1], ..., [e_m-e_1], ..., [e_m - e_m]]
-Exs = np.array([E1s[:, 0]]) #x components of E1s
-Eys = np.array([E1s[:, 1]]) #y components of E1s
-	
-nX = np.sum(np.abs(XEdiff)**2,axis=-1).reshape(n,m) # squared norm of each element x_i-e_j of X-EX #can rewrite these with nlg.norm
-nEX = np.sum(np.abs(EXdiff)**2,axis=-1).reshape(m,n) # squared norm of each element ey_i-x_j of Y-EX
-
-dist_mat = ssd.squareform(ssd.pdist(Xs, 'sqeuclidean')) #squared norm between Xs
-E_dist_mat = ssd.squareform(ssd.pdist(Epts))**2 #squared norm between Epts
-
-xedist = XEdiff[0:, 0:, 0, 0] # difference in x coordinates of x_i and e_j i.e. x_i_x - e_j_x
-Exdist = Ediff[0:, 0:, 0, 0] # difference in x coordinates of e_i and e_j i.e. e_i_x - e_j_x
-exdist_x = EXdiff[0:, 0:, 0, 0] # difference in x coordinates of e_i and x_j i.e. ey_i_x - x_j_x
-yedist = XEdiff[0:, 0:, 0, 1] # difference in y coordinates of x_i and e_j i.e. x_i_x - e_j_x
-Eydist = Ediff[0:, 0:, 0, 1] # difference in y coordinates of e_i and e_j i.e. e_i_x - e_j_x
-exdist_y = EXdiff[0:, 0:, 0, 1] # difference in y coordinates of e_i and x_j i.e. ey_i_x - x_j_x
-
-		
-dist_mat_sqrt = np.sqrt(dist_mat)
-S_00   = dist_mat*dist_mat_sqrt #sigma
-		
-nXsqrt = np.sqrt(nX)
-S_01x  = Exs*xedist*nXsqrt # dsigma/dx
-S_01y  = Eys*yedist*nXsqrt # dsigma/dy
-
-nEXsqrt = np.sqrt(nEX)
-S_10x  = 3*exdist_x*nEXsqrt#dsigma/dx.T  #Transposes?
-S_10y  = 3*exdist_y*nEXsqrt#dsigma/dy.T
-
-		
-# is copying expensive?
-E_dist_mat1 = E_dist_mat.copy()
-np.fill_diagonal(E_dist_mat1, 1)
-Esqrt = np.sqrt(E_dist_mat)
-Esqrt1 = np.sqrt(E_dist_mat1)
-
-S_11xx = Esqrt + 2*(alpha-1)*np.square(Exdist)/Esqrt1 #dsigma/dxdy
-S_11xy = Exdist*Eydist/Esqrt1 #dsigma/dxdy
-S_11yy = Esqrt + 2*(alpha-1)*np.square(Eydist)/Esqrt1 #dsigma/dydy
-
-S_01   = -2*alpha*(S_01x + S_01y)
-S_10   = 2*alpha*(S_10x + S_10y)
-S_11   = -2*alpha*(Exs.T*Exs*S_11xx + Eys.T*Eys*S_11yy) -4*alpha*(Exs.T*Eys*S_11xy + Eys.T*Exs*S_11xy)
-
-
-
-
-
-alpha = 1.5
-_,dim = Xs.shape
-
-wt_n = None
-
-normal_coef = 1
-
-
-n = Xs.shape[0] + Exs.shape[0]
-
-m,_ =Exs.shape
-
-if wt_n is None: wt_n = np.ones(n)/n
-wt_n[-m:]*=normal_coef
-	#rot_coefs = np.ones(dim) * rot_coefs if np.isscalar(rot_coefs) else rot_coefs
-
-Y = np.r_[Ys, Eys]
-
-S = krig_kernel_mat(alpha, Xs, Epts, Exs)
-D = krig_mat_linear(Xs, Epts, Exs)
-	#delete interest_pts_inds from S, D, and B (or maybe not B)
-
-K = np.r_[np.c_[S,D], np.c_[D.T, np.zeros((dim+1,dim+1))]]
-targ = np.r_[Ys, Eys, np.zeros((4,3))]
-
-Q = np.c_[S, D]
-WQ = wt_n[:,None]*Q
-H = Q.T.dot(WQ)
-H[:n, :n] += bend_coef*S
-	#H[n+m+1:, n+m+1:] += np.diag(rot_coefs) #wrong
-f = -WQ.T.dot(Y)
-	#f[n+m+1:,0:dim] -= np.diag(rot_coefs) #check this #wrong
-
-interest_pts_inds2 = np.r_[interest_pts_inds, interest_pts_inds]
-
-
-A = np.r_[np.c_[D.T, np.zeros((dim+1, dim+1))], np.c_[S[interest_pts_inds2], D[interest_pts_inds2]]]
-b = np.r_[np.zeros((dim+1, dim)), np.r_[Ys[interest_pts_inds], Eys[interest_pts_inds]]]
-n_vars = H.shape[0]
-assert H.shape[1] == n_vars
-assert f.shape[0] == n_vars
-assert A.shape[1] == n_vars
-n_cnts = A.shape[0]
-    
-_u,_s,_vh = np.linalg.svd(A.T)
-N = _u[:,n_cnts:]
-P = nlg.pinv(A)
-
-Pb = P.dot(b)
-nf = f + Pb
-    # columns of N span the null space
-    
-    # x = Nz
-    # then problem becomes unconstrained minimization .5*z'NHNz + z'Nf
-    # NHNz + Nf = 0
-z1 = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
-z2 = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f) - N.T.dot(H).dot(Pb))
-x = P.dot(b) + N.dot(z)
-	
-Theta = solve_eqp1_interest(H, f, A, b)
-
-"""
-
 

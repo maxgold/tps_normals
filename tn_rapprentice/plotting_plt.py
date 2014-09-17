@@ -346,23 +346,25 @@ def plot_correspondence(x_nd, y_nd):
     ax.add_collection(lc)
     plt.draw()
 
-def plot_corr_normals(corr_nm,corr_nm_edge, y_md, eys):
+def plot_corr_normals(x_nd, exs, y_md, eys):
     # set interactive
     plt.ion()
     
     fig = plt.figure('2d corr plot')
     fig.clear()
 
-    wt_n = corr_nm.sum(axis=1)
-    y_md_corr = (corr_nm/wt_n[:,None]).dot(y_md)
+    #wt_n = corr_nm.sum(axis=1)
+    #y_md_corr = (corr_nm/wt_n[:,None]).dot(y_md)
     
-    wt_n_edge = corr_nm_edge.sum(axis=1)
-    eys_corr = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
-    eys_corr /= np.linalg.norm(eys_corr, axis=1)[:,None]
-    #eys_corr = tps_utils.find_all_normals_naive(y_md_corr, wsize = .15, flip_away= True)
+    #wt_n_edge = corr_nm_edge.sum(axis=1)
+    #eys_corr = tps_utils.normal_corr_mult(corr_nm_edge/wt_n_edge[:,None], eys)
+    #eys_corr /= np.linalg.norm(eys_corr, axis=1)[:,None]
+    #eys_corr = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
+    #eys_corr /= np.linalg.norm(eys_corr, axis=1)[:,None]
+    eys = tps_utils.flip_normals(x_nd, x_nd, exs, y_md, eys, bend_coef = .1)
 
-
-    normals = y_md_corr + .1*eys_corr
+    y_md_corr = y_md
+    normals = y_md_corr + .1*eys
     linesx = np.c_[y_md_corr[:,0], normals[:,0]]
     linesy = np.c_[y_md_corr[:,1], normals[:,1]]
     for i, j in zip(linesx, linesy):
@@ -371,7 +373,8 @@ def plot_corr_normals(corr_nm,corr_nm_edge, y_md, eys):
 
     plt.draw()
 
-
+    #import IPython as ipy
+    #ipy.embed()
 
 
 def rotate_point_cloud2d(pcloud, angle):

@@ -218,7 +218,7 @@ def find_all_normals_below_threshold(dspcloud, orig_cloud = None, thresh = .36, 
 
     return normals
 
-def flip_normals(pts1, epts, exs,  pts2, eys, bend_coef = .1):
+def flip_normals(pts1, epts, exs,  pts2, eys, bend_coef = .1, pasta = None):
     from tn_rapprentice.registration import fit_KrigingSpline
     f = fit_KrigingSpline(pts1, epts, exs, pts2, eys, bend_coef = .1, normal_coef = 0)
     ewarped = f.transform_normals(epts, exs)
@@ -241,9 +241,10 @@ def flip_normals(pts1, epts, exs,  pts2, eys, bend_coef = .1):
     #ipy.embed()
 
     final_flipped = eys*bools1.T + eflipped*bools2.T
-
-    return final_flipped
-
+    if pasta is not None:
+        return final_flipped, f
+    else:
+        return final_flipped
 
 def angle_difference(x, y):
     xy = np.dot(x, y)
@@ -252,6 +253,57 @@ def angle_difference(x, y):
     r = np.arccos(xy/(lx*ly))
     return r*180/np.pi
 
+def ith_row(mat):
+    n, _, d = mat.shape
+    result_mat = np.zeros([0,d])
+    for i in range(len(mat)):
+        result_mat = np.r_[result_mat, mat[i][i][None, :]]
+    return result_mat
+
+
+def normal_corr_mult(corr, eys):
+    #eys have to be normalized
+    eys_n = eys.copy()
+    eys_n /= nlg.norm(eys, axis=1)[:,None]
+    n, d = eys.shape
+    prelim = np.max(corr, axis=1)
+    corr_bools = corr >= np.tile(prelim[:,None], ((1, n)))
+    for i in range(len(corr_bools)):
+        a = np.where(corr_bools[i])
+        if len(a[0]) > 0:
+            corr_bools[i][(a[0][0]+1):] *= 0
+    corr_bools = np.c_[corr_bools, corr_bools].reshape((n*d, n))
+
+    normals = np.tile(eys_n.T, ((n, 1)))
+    #only care about first True value
+    reference_normals = normals[corr_bools].reshape((n, d))
+    eys_n_tiled = np.tile(eys_n, ((n,1))).reshape(n, n, d)
+    reference_normals_tiled = np.tile(reference_normals, ((1,n))).reshape(n,n,d)
+
+    check = np.sum((reference_normals_tiled*eys_n_tiled).reshape((n*n,d)), axis=1)
+    check_bool = check >= 0
+    check_bool = np.tile(check_bool[:,None], ((1,2))).reshape((n,n,d))
+    check_bool_flip = check < 0
+    check_bool_flip = np.tile(check_bool_flip[:,None], ((1,2))).reshape((n,n,d))
+    eys_tiled = np.tile(eys, ((n,1))).reshape(n, n, d)
+    final_eys = eys_tiled*check_bool - eys_tiled*check_bool_flip
+
+    weighted_sum = np.zeros([0,d])
+    for i in range(len(corr)):
+        weighted_sum = np.r_[weighted_sum, corr[i].dot(final_eys[i])[None,:]]
+    #import IPython
+    #IPython.embed()
+
+    return weighted_sum
+
+def compute_curvature_weights(x_nd, y_md, wsize = .1):
+    x_curves = find_all_curvatures(x_nd, wsize = wsize)
+    y_curves = find_all_curvatures(y_md, wsize = wsize)
+    sx_curves = .5 - x_curves
+    sy_curves = .5 - y_curves
+    curves_mat = 16*np.square(sx_curves[:,None]*sy_curves[None,:])
+
+    return curves_mat
 
 
 
