@@ -765,7 +765,11 @@ def EM_step(f, x_nd, y_md, outlierfrac, temp, bend_coef, rot_reg, outlierprior, 
     
     return f, corr_nm
 
-
+##############################################################
+##############################################################
+##############################################################
+##############################################################
+# IMPORTANT STUFF BELOW!!!
 def tps_n_rpm_final_hopefully(x_nd, y_md, exs = None, eys = None, orig_source = None, orig_target = None, n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01,
                      rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, jplotting = 0, 
                     normal_coef = .1,  normal_temp = .05, flip_away=True):
@@ -796,15 +800,15 @@ def tps_n_rpm_final_hopefully(x_nd, y_md, exs = None, eys = None, orig_source = 
     
     for i in xrange(n_iter):
         if i == n_iter - 1:
-            print "--------------------------------------"
+            #print "--------------------------------------"
             for j in range(EM_iter):
                 f, corr_nm, corr_nm_edge = EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temps[i], normal_temp, bend_coefs[i], normal_coef, rot_reg, outlierprior, beta = beta, wsize = wsize)
-                print tps_n_rpm_obj(f, corr_nm, corr_nm_edge, temps[i], bend_coefs[i], normal_temp, x_nd, y_md, exs, eys, normal_coef)
+                #print tps_n_rpm_obj(f, corr_nm, corr_nm_edge, temps[i], bend_coefs[i], normal_temp, x_nd, y_md, exs, eys, normal_coef)
         else:
-            print "--------------------------------------"
+            #print "--------------------------------------"
             for j in range(EM_iter):
                 f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, temps[i], bend_coefs[i], rot_reg, outlierprior, curve_cost = curve_cost, beta = beta)
-                print tps_rpm_obj(f, corr_nm, temps[i], bend_coefs[i],  x_nd, y_md)
+                #print tps_rpm_obj(f, corr_nm, temps[i], bend_coefs[i],  x_nd, y_md)
 
         if plotting and i%plotting==0:
             p_plt.plot_tps_registration(x_nd, y_md, f)
@@ -926,7 +930,11 @@ def fit_KrigingSpline_final(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge,bend_coe
     #below could be buggy
     #f._cost = tps.krig_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
     return f
-
+##############################################################
+##############################################################
+##############################################################
+##############################################################
+# IMPORTANT STUFF ABOVE!!!
 
 def tps_n_rpm_obj(f, corr, corr_edge, temp, bend_coef, normal_temp, x_nd, y_md, exs, eys, normal_coef):
     fpoints = f.transform_points(x_nd)

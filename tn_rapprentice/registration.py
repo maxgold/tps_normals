@@ -516,130 +516,7 @@ def tps_rpm_double_corr(x_nd, y_md, exs = None, eys = None, orig_source = None, 
     
 
 
-def EM_step(f, x_nd, y_md, outlierfrac, temp, bend_coef, rot_reg, outlierprior, curve_cost = None, beta = 1):
-    n,_ = x_nd.shape
-    m,_ = y_md.shape
-    x_priors = np.ones(n)*outlierprior    
-    y_priors = np.ones(m)*outlierprior
 
-    xwarped_nd = f.transform_points(x_nd)
-    dist_nm = ssd.cdist(xwarped_nd, y_md,'sqeuclidean')
-    T = temp
-    prob_nm = np.exp( -dist_nm / T )
-
-    beta = beta
-    if curve_cost != None:
-        pi = np.exp(-beta*curve_cost)
-        pi /= pi.max() # we can do better I think
-        prob_nm *= pi
-        #ipy.embed()
-
-    corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
-    corr_nm += 1e-9    
-    wt_n = corr_nm.sum(axis=1)
-
-    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-      
-    f = fit_ThinPlateSpline_corr(x_nd, y_md, corr_nm, bend_coef, rot_reg)
-    return f, corr_nm
-
-def EM_step_normals(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_temp, rot_reg, outlierprior, curve_cost = None, beta = 1):
-    #EM step for rpm with normals as priors, probably won't end up using
-    n,_ = x_nd.shape
-    m,_ = y_md.shape
-    x_priors = np.ones(n)*outlierprior    
-    y_priors = np.ones(m)*outlierprior
-
-    xwarped_nd = f.transform_points(x_nd)
-    dist_nm = ssd.cdist(xwarped_nd, y_md,'sqeuclidean')
-    T = temp
-    prob_nm = np.exp( -dist_nm / T )
-
-    ewarped_nd = f.transform_normals(x_nd, exs)
-    ewarped_nd /= nlg.norm(x_nd, axis=1)[:,None]
-    #normals_cost = compute_normals_cost(xwarped_nd, y_md, y_md, y_md, .1)
-    normals_cost = ssd.cdist(ewarped_nd, eys, 'sqeuclidean')
-
-    beta = beta
-    pi = np.exp(-beta*normals_cost/normal_temp)
-    print np.max(pi), np.min(pi)
-    #pi /= pi.max() # we can do better I think
-    #import IPython as ipy
-    #ipy.embed()
-    prob_nm *= pi
-    corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
-    corr_nm += 1e-9    
-    wt_n = corr_nm.sum(axis=1)
-
-    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-      
-    f = fit_ThinPlateSpline_corr(x_nd, y_md, corr_nm, bend_coef, rot_reg)
-
-    ewarped = tps_utils.find_all_normals_naive(f.transform_points(x_nd), y_md, wsize =.1)
-    es = tps_utils.find_all_normals_naive(y_md, y_md, wsize = .1)
-    print np.sum(np.abs(ewarped - es))/len(es)
-    return f, corr_nm
-
-def EM_step_double_corr(f, x_nd, y_md, exs, eys, outlierfrac, temp, normal_temp, bend_coef, normal_coef, rot_reg, outlierprior, curve_cost = None, beta = 1):
-    n,_ = x_nd.shape
-    m,_ = y_md.shape
-    x_priors = np.ones(n)*outlierprior
-    y_priors = np.ones(m)*outlierprior
-
-    xwarped_nd = f.transform_points(x_nd)
-    dist_nm = ssd.cdist(xwarped_nd, y_md, 'sqeuclidean')
-    t = temp
-    prob_nm = np.exp(-dist_nm/t)
-    if curve_cost != None:
-        pi = np.exp(-beta*curve_cost)
-        pi /= pi.max() # we can do better I think
-        prob_nm *= pi
-
-    ewarped_nd = f.transform_normals(x_nd, exs)
-    ewarped_nd = tps_utils.flip_normals(x_nd, x_nd, exs, xwarped_nd, ewarped_nd)
-    ewarped_nd /= nlg.norm(ewarped_nd, axis=1)[:,None]
-    dist_nm_edge_warped = ssd.cdist(ewarped_nd, eys, 'sqeuclidean')
-    #ewarped_nd_flipped = -ewarped_nd
-    #dist_nm_edge_flipped = ssd.cdist(ewarped_nd_flipped, eys, 'sqeuclidean')
-    #dist_nm_edge = np.minimum(dist_nm_edge_warped, dist_nm_edge_flipped)
-
-    nt = normal_temp
-    prob_nm_edge = np.exp(-dist_nm_edge_warped/nt)
-    #prob_nm_edge = np.exp(-dist_nm_edge/nt)
-    
-
-    corr_nm, r_N, _ = balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac)
-    corr_nm += 1e-9
-    wt_n = corr_nm.sum(axis=1)
-
-    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
-
-    corr_nm_edge, r_N_norm, _ = balance_matrix3(prob_nm_edge, 10, x_priors, y_priors, outlierfrac)
-    corr_nm_edge += 1e-9
-    wt_n_edge = corr_nm_edge.sum(axis=1)
-
-    print np.max(corr_nm_edge), np.min(corr_nm_edge)
-
-    targ_nd_edge = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
-    targ_nd_edge /= nlg.norm(targ_nd_edge, axis=1)[:,None]
-    #targ_nd_edge = tps_utils.flip_normals(x_nd, x_nd, exs, targ_nd, targ_nd_edge)
-
-    #targ_nd_edge = tps_utils.find_all_normals_naive(targ_nd, wsize = .15, flip_away= True)
-    #normal_coef = 0
-    f = fit_KrigingSpline_corr(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge, bend_coef, rot_reg, normal_coef, x_weights = None)
-    
-    return f, corr_nm, corr_nm_edge
-
-def compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize):
-    x_curves = tps_utils.find_all_curvatures(x_nd, orig_source, wsize)
-    y_curves = tps_utils.find_all_curvatures(y_md, orig_target, wsize)
-
-    x_curves = np.c_[x_curves, np.zeros((len(x_curves), 1))]
-    y_curves = np.c_[y_curves, np.zeros((len(y_curves), 1))]
-
-    curve_cost = ssd.cdist(x_curves, y_curves, 'cityblock')
-
-    return curve_cost
 
 def fit_ThinPlateSpline_corr(x_nd, y_md, corr_nm, bend_coef, rot_reg, x_weights = None):
     wt_n = corr_nm.sum(axis=1)
@@ -859,16 +736,110 @@ def fit_KrigingSpline_corr(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge, bend_coe
     #f._cost = tps.krig_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
     return f
 
-###############
-#what we are working with for now
+
+
+##############################################################
+##############################################################
+##############################################################
+##############################################################
+# IMPORTANT STUFF BELOW!!!
+def EM_step(f, x_nd, y_md, outlierfrac, temp, bend_coef, rot_reg, outlierprior, curve_cost = None, beta = 1):
+    n,_ = x_nd.shape
+    m,_ = y_md.shape
+    x_priors = np.ones(n)*outlierprior    
+    y_priors = np.ones(m)*outlierprior
+
+    xwarped_nd = f.transform_points(x_nd)
+    dist_nm = ssd.cdist(xwarped_nd, y_md,'sqeuclidean')
+    T = temp
+    prob_nm = np.exp( -dist_nm / T )
+
+    beta = beta
+    if curve_cost != None:
+        pi = np.exp(-beta*curve_cost)
+        pi /= pi.max() # we can do better I think
+        prob_nm *= pi
+        #ipy.embed()
+
+    corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
+    corr_nm += 1e-9    
+    wt_n = corr_nm.sum(axis=1)
+
+    targ_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+      
+    f = fit_KrigingSpline_corr(x_nd, y_md, x_nd, y_md, corr_nm, corr_nm, bend_coef, rot_reg, normal_coef = 0)
+    #p_plt.plot_tps_registration(x_nd, y_md, f)
+    
+    return f, corr_nm
+
+
+
+def compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize):
+    x_curves = tps_utils.find_all_curvatures(x_nd, orig_source, wsize)
+    y_curves = tps_utils.find_all_curvatures(y_md, orig_target, wsize)
+
+    x_curves = np.c_[x_curves, np.zeros((len(x_curves), 1))]
+    y_curves = np.c_[y_curves, np.zeros((len(y_curves), 1))]
+
+    curve_cost = ssd.cdist(x_curves, y_curves, 'cityblock')
+
+    return curve_cost
+
+def fit_KrigingSpline_corr(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge, bend_coef, rot_reg, normal_coef, normal_normalizers = None, x_weights = None):
+    #Need to add Epts
+    wt_n = corr_nm.sum(axis=1)
+    wt_n_edge = corr_nm_edge.sum(axis=1)
+    if np.any(wt_n == 0):
+        inlier = wt_n != 0
+        x_nd = x_nd[inlier,:]
+        wt_n = wt_n[inlier,:]
+        x_weights = x_weights[inlier]
+        xtarg_nd = (corr_nm[inlier,:]/wt_n[:,None]).dot(y_md)
+    elif np.any(wt_n_edge == 0):
+        inlier = wt_n_edge != 0
+        x_nd = x_nd[inlier,:]
+        wt_n_edge = wt_n_edge[inlier,:]
+        x_weights = x_weights[inlier]
+        #xtarg_nd_edge = (corr_nm_edge[inlier,:]/wt_n_edge[:,None]).dot(y_md)
+        targ_nd_edge = tps_utils.normal_corr_mult(corr_nm_edge/wt_n_edge[:,None], eys)
+        targ_nd_edge /= nlg.norm(targ_nd_edge, axis=1)[:,None]
+        xtarg_nd_edge = tps_utils.flip_normals(x_nd, x_nd, exs, targ_nd, targ_nd_edge)
+    else:
+        xtarg_nd = (corr_nm/wt_n[:,None]).dot(y_md)
+        xtarg_nd_edge = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
+    if x_weights is not None:
+        if x_weights.ndim > 1:
+            wt_n=wt_n[:,None]*x_weights
+        else:
+            wt_n=wt_n*x_weights
+    if normal_coef != 0:
+        if normal_normalizers is not None:
+
+            wt_nn = np.r_[wt_n, ((1/normal_normalizers**2).T * wt_n_edge).T[:,0]]
+            exs *= normal_normalizers
+        else:
+            wt_nn = np.r_[wt_n, wt_n_edge]
+    else:
+        wt_nn = wt_n
+
+    #f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = bend_coef, wt_n = wt_n, rot_coef = rot_reg)
+    #ipy.embed()
+    f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, xtarg_nd_edge, bend_coef = bend_coef, wt_n = wt_nn, normal_coef = normal_coef, rot_coefs = rot_reg)
+    f._bend_coef = bend_coef
+    f._wt_n = wt_n
+    f._rot_coef = rot_reg
+    #below could be buggy
+    #f._cost = tps.krig_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
+    return f
+
 def tps_n_rpm_final_hopefully(x_nd, y_md, exs = None, eys = None, orig_source = None, orig_target = None, n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01,
                      rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, jplotting = 0, 
                     normal_coef = .1,  normal_temp = .05, flip_away=True):
     
-    
     _,d=x_nd.shape
     temps = loglinspace(temp_init, temp_final, n_iter)
     bend_coefs = loglinspace(bend_init, bend_final, n_iter)
+    normal_temp = normal_temp
     #ipy.embed()
     
     if f_init is not None: 
@@ -886,34 +857,21 @@ def tps_n_rpm_final_hopefully(x_nd, y_md, exs = None, eys = None, orig_source = 
     if eys is None:
         eys = tps_utils.find_all_normals_naive(y_md, wsize=wsize, flip_away=flip_away)
 
-    curve_cost = compute_curvature_cost(x_nd, y_md, orig_source, orig_target, wsize)
+    curve_cost = tps_utils.compute_curvature_weights(x_nd, y_md, wsize = wsize)
     normal_temp = normal_temp
     
     for i in xrange(n_iter):
         if i == n_iter - 1:
             for j in range(EM_iter):
-                print i, j
                 f, corr_nm, corr_nm_edge = EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temps[i], normal_temp, bend_coefs[i], normal_coef, rot_reg, outlierprior, beta = beta, wsize = wsize)
-                print tps_n_rpm_obj(f, corr_nm, corr_nm_edge, temps[i], bend_coefs[i], normal_temp, x_nd, y_md, exs, eys, normal_coef)
         else:
             for j in range(EM_iter):
-                print i, j
                 f, corr_nm = EM_step(f, x_nd, y_md, outlierfrac, temps[i], bend_coefs[i], rot_reg, outlierprior, curve_cost = curve_cost, beta = beta)
 
-        if plotting and i%plotting==0:
-            p_plt.plot_tps_registration(x_nd, y_md, f)
-            p_plt.plot_tps_registration_normals(x_nd, y_md, exs, eys, f, wsize = wsize)
-            targ_nd = (corr_nm/np.sum(corr_nm, axis=1)[:,None]).dot(y_md)
-            #targ_nd_edge = tps_utils.find_all_normals_naive(y_md, wsize = wsize)
-            if i == n_iter - 1:
-                targ_nd_edge = (corr_nm_edge/wt_n_edge[:,None]).dot(eys)
-                targ_nd_edge = tps_utils.normal_corr_mult(corr_nm_edge/wt_n_edge[:,None], eys)
-                targ_nd_edge = tps_utils.flip_normals(x_nd, x_nd, exs, targ_nd, targ_nd_edge)
-                p_plt.plot_corr_normals(x_nd, exs, targ_nd, targ_nd_edge)
     
     return f, corr_nm, corr_nm_edge
-
-def EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_temp, normal_coef, rot_reg, outlierprior, beta = 1, wsize = .1):
+    
+def EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_temp, normal_coef, rot_reg, outlierprior, curve_cost = None, beta = 1, wsize = .1):
     n,_ = x_nd.shape
     m,_ = y_md.shape
     x_priors = np.ones(n)*outlierprior    
@@ -924,11 +882,11 @@ def EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_
     T = temp
     prob_nm = np.exp( -dist_nm / T )
 
-    beta = 20
-    #if curve_cost != None:
-    #    pi = np.exp(-beta*curve_cost)
-    #    pi /= pi.max() # we can do better I think
-    #    prob_nm *= pi
+    beta = beta
+    if curve_cost != None:
+        pi = np.exp(-beta*curve_cost)
+        pi /= pi.max() # we can do better I think
+        prob_nm *= pi
         #ipy.embed()
 
     corr_nm, r_N, _ =  balance_matrix3(prob_nm, 10, x_priors, y_priors, outlierfrac) # edit final value to change outlier percentage
@@ -954,8 +912,8 @@ def EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_
 
     corr_nm_edge, r_N_edge, _ = balance_matrix3(prob_nm_edge, 10, x_priors, y_priors, outlierfrac)
     corr_nm_edge += 1e-9
-    curve_weights = tps_utils.compute_curvature_weights(x_nd, targ_nd, wsize = wsize)
-    corr_nm_edge *= curve_weights
+    curve_weights = tps_utils.compute_curvature_weights(x_nd, y_md, wsize = wsize)
+    corr_nm_edge *= curve_weights #gives normals weights based on curvature. The higher the curvature, the less weight it gets
 
     wt_n_edge = corr_nm_edge.sum(axis=1)    
 
@@ -965,6 +923,7 @@ def EM_step_final(f, x_nd, y_md, exs, eys, outlierfrac, temp, bend_coef, normal_
     #targ_nd_edge = tps_utils.find_all_normals_naive(targ_nd, wsize = .15)
 
     f = fit_KrigingSpline_final(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge, bend_coef, rot_reg, normal_coef)
+
 
     return f, corr_nm, corr_nm_edge
     #ipy.embed()
@@ -1005,13 +964,21 @@ def fit_KrigingSpline_final(x_nd, y_md, exs, eys, corr_nm, corr_nm_edge,bend_coe
 
     #f = fit_ThinPlateSpline(x_nd, xtarg_nd, bend_coef = bend_coef, wt_n = wt_n, rot_coef = rot_reg)
     #ipy.embed()
-    f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, targ_nd_edge, bend_coef = bend_coef, wt_n = wt_nn, normal_coef = normal_coef, rot_coefs = rot_reg)
+    if normal_coef != 0:
+        f = fit_KrigingSpline(x_nd, x_nd, exs, xtarg_nd, targ_nd_edge, bend_coef = bend_coef, wt_n = wt_nn, normal_coef = normal_coef, rot_coefs = rot_reg)
+    else:
+        f = fit_KrigingSpline(x_nd, x_nd, x_nd, xtarg_nd, x_nd, bend_coef = bend_coef, wt_n = wt_nn, normal_coef = normal_coef, rot_coefs = rot_reg)
     f._bend_coef = bend_coef
     f._wt_n = wt_n
     f._rot_coef = rot_reg
     #below could be buggy
     #f._cost = tps.krig_cost(f.lin_ag, f.trans_g, f.w_ng, f.x_na, xtarg_nd, bend_coef, wt_n=wt_n)/wt_n.mean()
     return f
+##############################################################
+##############################################################
+##############################################################
+##############################################################
+# IMPORTANT STUFF ABOVE!!!
 
 
 def tps_n_rpm_obj(f, corr, corr_edge, temp, bend_coef, normal_temp, x_nd, y_md, exs, eys, normal_coef):
