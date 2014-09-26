@@ -302,6 +302,7 @@ def compute_curvature_weights(x_nd, y_md, wsize = .1):
     sx_curves = .5 - x_curves
     sy_curves = .5 - y_curves
     curves_mat = 16*np.square(sx_curves[:,None]*sy_curves[None,:])
+    #curves_mat = 64*(sx_curves[:,None]*sy_curves[None,:])**3
 
     return curves_mat
 

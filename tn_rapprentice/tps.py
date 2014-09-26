@@ -364,7 +364,7 @@ def tps_fit3(x_na, y_ng, bend_coef, rot_coef, wt_n = None):
     
     Theta = solve_eqp1(H,f,A)
 
-    assert Theta[:n].T.dot(K_nn.dot(Theta[:n]))
+    #assert Theta[:n].T.dot(K_nn.dot(Theta[:n]))
     
     return Theta[1:d+1], Theta[0], Theta[d+1:]
     

@@ -27,6 +27,8 @@ def transform_normals1(alpha, Xs, Epts, Exs, Eypts, Eys, w_ng, lin_ag):
 	n, d = Xs.shape
 	m, _ = w_ng.shape
 
+	import IPython as ipy
+	#ipy.embed()
 	S = ku.krig_kernel_mat2(alpha, Xs, Epts, Exs, Eys, Xs, Eypts)	
 	D = ku.krig_mat_linear(Xs, Eypts, Eys)
 

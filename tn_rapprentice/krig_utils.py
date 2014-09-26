@@ -4,6 +4,8 @@ from math import floor
 
 from tn_eval.tps_utils import find_all_normals_naive
 
+import IPython as ipy
+
 def nan2zero(x):
     np.putmask(x, np.isnan(x), 0)
     return x
@@ -54,6 +56,10 @@ def krig_kernel_mat(alpha, Xs, Epts, E1s):
 	"""
 	computes kriging kernel matrix
 	alpha is assumed to be 1.5
+
+	##################################################
+	Something weird with minus sign of S_11, which one is correct?
+	##################################################
 	"""
 	assert Xs.shape[1] == Epts.shape[1]
 	assert E1s.shape[0] == Epts.shape[0]
@@ -164,6 +170,10 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 	ey_na are normal points at which matrix is computed
 	E1s are original normal lengths
 	E1sr are new normal lengths
+
+	##################################################
+	Something weird with minus sign of S_11, which one is correct?
+	##################################################
 	"""
 	assert Xs.shape[1] == Epts.shape[1]
 	assert E1s.shape[0] == Epts.shape[0]
@@ -223,7 +233,7 @@ def krig_kernel_mat2(alpha, Xs, Epts, E1s, E1sr, Ys, Eypts):
 		S_10   = Exsr.T*S_10x + Eysr.T*S_10y
 		S_11   = -2*alpha*(Exsr.T*Exs*S_11xx + Eysr.T*Eys*S_11yy) - 4*alpha*(Exsr.T*Eys*S_11xy + Eysr.T*Exs*S_11xy) 
 
-		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, -S_11]]
+		return np.r_[np.c_[S_00, -2*alpha*S_01], np.c_[2*alpha*S_10, S_11]]
 
 	elif d==3:
 		yedist_z = YEdiff[0:, 0:, 0, 2] # difference in z coordinates of x_i and e_j i.e. x_i_x - e_j_x
@@ -293,7 +303,7 @@ def krig_fn(alpha, Xs, Ys, Epts, Exs, Eys):
 	return nlg.solve(K, targ)
 
 
-def bending_energynormal(S,D, dim):
+def bending_energynormal(S,D):
 	
 	#return np.r_[np.c_[S, D], np.c_[D.T, np.zeros((dim+1, dim+1))]]
 	return S
@@ -414,6 +424,9 @@ def solve_eqp1(H, f, A):
     # NHNz + Nf = 0
     z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
     x = N.dot(z)
+
+    
+    #ipy.embed()
     
     return x
 
@@ -436,6 +449,7 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 		S = krig_kernel_mat(alpha, Xs, Epts, Exs)
 		D = krig_mat_linear(Xs, Epts, Exs)
 		B = bending_energy_mat(S, D, pasta = 1)
+		#B = bending_energynormal(S, D)
 
 		Q = np.c_[S, D]
 		WQ = wt_n[:,None]*Q
@@ -446,10 +460,14 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 
 		A = np.c_[D.T, np.zeros((dim+1, dim+1))]
 
-		Theta = solve_eqp1(H, f, A)
 		
+
+		Theta = solve_eqp1(H, f, A)
+
 		import IPython as ipy
 		#ipy.embed()
+		
+		
 		#assert np.trace(Theta[:n+m].T.dot(B.dot(Theta[:n+m]))) > 0
 
 		return Theta[:n+m], Theta[n+m], Theta[n+m+1:]
@@ -483,6 +501,7 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 
 
 		if not np.trace(Theta[:n].T.dot(B.dot(Theta[:n]))) > 0:
+			print "embed in krig_fit1normal krig_utils"
 			import IPython as ipy
 			ipy.embed()
 
@@ -546,16 +565,16 @@ def find_rope_tangents(pts1):
 def main():
     from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in
     from tn_eval.tps_utils import find_all_normals_naive
-    pts1 = gen_half_sphere(1, 30)
-    pts2 = gen_half_sphere_pulled_in(1, 30, 4, .2)
-    e1 = find_all_normals_naive(pts1, .7, flip_away=True)
-    e2 = find_all_normals_naive(pts2, .7, flip_away=True)
-    Xs = pts1
-    Epts = pts1
-    Exs = e1
-    Ys = pts2
-    Eys = e2
-    alpha = 1.5
+    #pts1 = gen_half_sphere(1, 30)
+    #pts2 = gen_half_sphere_pulled_in(1, 30, 4, .2)
+    #e1 = find_all_normals_naive(pts1, .7, flip_away=True)
+    #e2 = find_all_normals_naive(pts2, .7, flip_away=True)
+    #Xs = pts1
+    #Epts = pts1
+    #Exs = e1
+    #Ys = pts2
+    #Eys = e2
+    #alpha = 1.5
 
     krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys)
 

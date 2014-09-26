@@ -16,7 +16,7 @@ index name conventions:
 from __future__ import division
 import numpy as np
 import scipy.spatial.distance as ssd
-from rapprentice import tps, svds, math_utils
+from tn_rapprentice import tps
 from tn_rapprentice import krig, tps as tn_tps
 import tn_eval.tps_utils as tu
 import numpy.linalg as nlg
@@ -1043,6 +1043,7 @@ def main():
     from tn_testing.test_tps import gen_half_sphere, gen_half_sphere_pulled_in
     from tn_eval.tps_utils import find_all_normals_naive
     import big_rope_pcloud
+    """
     EM_iter = 1
     beta = 2e1 #20 works for 90 rotation
     wsize = .1
@@ -1061,7 +1062,56 @@ def main():
 
     import IPython as ipy
     ipy.embed()
+    """
+
+    from tn_testing.test_tps import create_flap_points_normals
+
+    bend_coef = 0
+    normal_coef = .1
+
+    pts1, pts2, e1, e2 = create_flap_points_normals(3,1,2)
+    f = fit_KrigingSpline(pts1, pts1, e1, pts2, e2, bend_coef = bend_coef, normal_coef = normal_coef)
+    import IPython as ipy
+    ipy.embed()
+
 
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
