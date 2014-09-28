@@ -3,6 +3,7 @@
 ###
 import numpy as np, numpy.linalg as nlg
 import scipy.spatial.distance as ssd
+import IPython as ipy
 
 def tps_kernel(x,y,dim=None):
     """
@@ -265,6 +266,7 @@ def normal_corr_mult(corr, eys):
     #eys have to be normalized
     eys_n = eys.copy()
     eys_n /= nlg.norm(eys, axis=1)[:,None]
+    m = len(corr)
     n, d = eys.shape
     prelim = np.max(corr, axis=1)
     corr_bools = corr >= np.tile(prelim[:,None], ((1, n)))
@@ -272,27 +274,26 @@ def normal_corr_mult(corr, eys):
         a = np.where(corr_bools[i])
         if len(a[0]) > 0:
             corr_bools[i][(a[0][0]+1):] *= 0
-    corr_bools = np.c_[corr_bools, corr_bools].reshape((n*d, n))
-
+    corr_bools = np.c_[corr_bools, corr_bools, corr_bools].reshape((m*d, n))
+    
     normals = np.tile(eys_n.T, ((n, 1)))
     #only care about first True value
-    reference_normals = normals[corr_bools].reshape((n, d))
-    eys_n_tiled = np.tile(eys_n, ((n,1))).reshape(n, n, d)
-    reference_normals_tiled = np.tile(reference_normals, ((1,n))).reshape(n,n,d)
+    #ipy.embed()
+    reference_normals = normals[corr_bools].reshape((m, d))
+    eys_n_tiled = np.tile(eys_n, ((m,1))).reshape(m, n, d)
+    reference_normals_tiled = np.tile(reference_normals, ((1,n))).reshape(m,n,d)
 
-    check = np.sum((reference_normals_tiled*eys_n_tiled).reshape((n*n,d)), axis=1)
+    check = np.sum((reference_normals_tiled*eys_n_tiled).reshape((m*n,d)), axis=1)
     check_bool = check >= 0
-    check_bool = np.tile(check_bool[:,None], ((1,2))).reshape((n,n,d))
+    check_bool = np.tile(check_bool[:,None], ((1,d))).reshape((m,n,d))
     check_bool_flip = check < 0
-    check_bool_flip = np.tile(check_bool_flip[:,None], ((1,2))).reshape((n,n,d))
-    eys_tiled = np.tile(eys, ((n,1))).reshape(n, n, d)
+    check_bool_flip = np.tile(check_bool_flip[:,None], ((1,d))).reshape((m, n, d))
+    eys_tiled = np.tile(eys, ((m,1))).reshape(m, n, d)
     final_eys = eys_tiled*check_bool - eys_tiled*check_bool_flip
 
     weighted_sum = np.zeros([0,d])
     for i in range(len(corr)):
         weighted_sum = np.r_[weighted_sum, corr[i].dot(final_eys[i])[None,:]]
-    #import IPython
-    #IPython.embed()
 
     return weighted_sum
 
