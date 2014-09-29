@@ -122,11 +122,12 @@ def project_lower_dim (pcloud):
     return VT[0:dim-1,:].dot(p_centered.T).T
 
 
-def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
+def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False,origin=None):
     """
     Selects close points on pcloud within windowsize and then does PCA to find normals.
     Normal could potentially be flipped.
     """
+
     dim = pcloud.shape[1]
     cpoints = pcloud[nlg.norm(pcloud-pt, axis=1) <= wsize,:]
     if cpoints.shape[0] < dim: return np.zeros(dim  )
@@ -137,11 +138,15 @@ def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
 
     #Potentially flip the normal: if more than half of the other points are in the direction of the normal, flip
     if flip_away:
-        if sum((pcloud-pt).dot(nm)>0) > pcloud.shape[0]*1.0/2.0: nm = -nm
+        if origin is not None:
+            if (pt-origin).dot(nm) > (pt-origin).dot(-nm):
+                nm=-nm
+        else:
+            if sum((pcloud-pt).dot(nm)>0) > pcloud.shape[0]*1.0/2.0: nm = -nm
     
     return nm
 
-def find_all_normals_naive (dspcloud, orig_cloud = None, wsize=0.02, flip_away=False, project_lower_dim=False):
+def find_all_normals_naive (dspcloud, orig_cloud = None, wsize=0.02, flip_away=False, project_lower_dim=False, origin=None):
     """
     Find normals at all the points of the downsampled point cloud, dspcloud, in the original point cloud, pcloud.
     """
@@ -160,7 +165,7 @@ def find_all_normals_naive (dspcloud, orig_cloud = None, wsize=0.02, flip_away=F
     
     normals = np.zeros([0,dspcloud.shape[1]])
     for pt in dspcloud:
-        nm = find_normal_naive(orig_cloud,pt,wsize,flip_away)
+        nm = find_normal_naive(orig_cloud,pt,wsize,flip_away,origin=origin)
         normals = np.r_[normals,np.atleast_2d(nm)]
     return normals
 

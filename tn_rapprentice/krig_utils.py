@@ -424,7 +424,7 @@ def solve_eqp1(H, f, A):
     # NHNz + Nf = 0
     z = np.linalg.solve(N.T.dot(H.dot(N)), -N.T.dot(f))
     x = N.dot(z)
-
+    print str(np.trace(x.T.dot(H).dot(x)) + np.sum(f.T.dot(x)))
     
     #ipy.embed()
     
@@ -443,6 +443,8 @@ def krig_fit1Normal(alpha, Xs, Ys, Epts, Exs, Eys, bend_coef = .01, normal_coef 
 	if normal_coef != 0:
 		if wt_n is None: wt_n = np.ones(n+m)/(n+m)
 		wt_n[n:]*=normal_coef
+		import IPython as ipy
+		ipy.embed()
 
 		Y = np.r_[Ys, Eys]
 
