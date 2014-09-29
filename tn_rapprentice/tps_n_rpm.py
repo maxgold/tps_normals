@@ -672,8 +672,7 @@ def tps_rpm_curvature_rpm_joint(x_nd, y_md, orig_source = None, orig_target = No
     return fc, f
 #@profile
 def tps_rpm_EM(x_nd, y_md,  n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01, rot_reg = 1e-5, 
-             outlierfrac = 1e-2, EM_iter = 5, f_init = None, outlierprior = .1, plotting = False, angle = 0,
-             square_size = 0, circle_rad = 0, wsize = .1):
+             outlierfrac = 1e-2, EM_iter = 5, f_init = None, outlierprior = .1, plotting = False,  wsize = .1):
     _,d=x_nd.shape
     temps = loglinspace(temp_init, temp_final, n_iter)
     bend_coefs = loglinspace(bend_init, bend_final, n_iter)
@@ -681,10 +680,6 @@ def tps_rpm_EM(x_nd, y_md,  n_iter=20, temp_init=.1,  temp_final=.01, bend_init=
         f = f_init  
     else:
         f = ThinPlateSpline(d)
-
-    e1 = tps_utils.find_all_normals_naive(x_nd, wsize=wsize, flip_away=True)
-    e2 = tps_utils.find_all_normals_naive(y_md, wsize=wsize, flip_away=True)
-
     for i in xrange(n_iter):
         for j in range(EM_iter):
             print i,j
@@ -695,13 +690,7 @@ def tps_rpm_EM(x_nd, y_md,  n_iter=20, temp_init=.1,  temp_final=.01, bend_init=
             #p_plt.plot_tps_registration_normals(x_nd, y_md, exs, eys, f, wsize = wsize)
 
 
-    #ipy.embed()
     return f, corr_nm
-
-#@profile
-
-
-
 
 def tps_rpm_curvature_prior1(x_nd, y_md, orig_source = None, orig_target = None, n_iter=20, temp_init=.1,  temp_final=.01, bend_init=.1, bend_final=.01,
                      rot_reg = 1e-5,  outlierfrac = 1e-2, wsize = .1, EM_iter = 5, f_init = None, outlierprior = .1, beta = 1, plotting = False, angle = 0,
@@ -1032,52 +1021,51 @@ def main():
     angle = 0
     
 
-    #x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 3]), np.array([0,1])
-    #x0t, x1t, x2t, x3t, x4t = np.array([0,0]), np.array([1,0]), np.array([1,.5]), np.array([.5, 1.5]), np.array([0,.5])
+    x0s, x1s, x2s, x3s, x4s = np.array([0,0]), np.array([1,0]), np.array([1,1]), np.array([.5, 3]), np.array([0,1])
+    x0t, x1t, x2t, x3t, x4t = np.array([0,0]), np.array([1,0]), np.array([1,.5]), np.array([.5, 1.5]), np.array([0,.5])
 
 
-    #pts1 = gen_house(x0s, x1s, x2s, x3s, x4s, number_points)
-    #pts2 = gen_house(x0t, x1t, x2t, x3t, x4t, number_points)    
+    pts1 = gen_house(x0s, x1s, x2s, x3s, x4s, number_points)
+    pts2 = gen_house(x0t, x1t, x2t, x3t, x4t, number_points)    
     #pts1 = gen_box_circle(square_size1, circle_rad1, number_points = number_points)
     #pts2 = gen_box_circle(square_size2, circle_rad2, number_points = number_points)
     #pts1 = gen_circle_points(.5, 30)
     #pts2 = gen_circle_points(.5, 30)
     #pts1 = grabs_two.old_cloud[:,:2]
     #pts2 = grabs_two.new_cloud[:,:2]
-    pts1 = x_nd
-    pts2 = y_md
+    #pts1 = x_nd
+    #pts2 = y_md
     
     #pts1r = np.random.permutation(pts1)
-    pts1r = rotate_point_cloud3d(pts1, angle)
+    pts1r = rotate_point_cloud2d(pts1, angle)
 
 
     EM_iter = 5
 
-    beta = 0 #20 works for 90 rotation
+    beta = 1 #20 works for 90 rotation
     
     jplotting = 0
-    plotting = 0
+    plotting = 1
     
 
 
     temp_init = 1
     temp_final = .0005
-    bend_init = 1e2 #1e2 works for 90 rotation
-    bend_final = 1e-2
-    wsize = .1
+    bend_init = 1e5 #1e2 works for 90 rotation
+    bend_final = 1e-1
+    wsize = .2
     
-    normal_coef = 1e-10
+    normal_coef = 1e-1
     normal_temp = .001
 
-    #exs = find_all_normals_naive(pts1r, wsize = wsize, flip_away=True)
-    #eys = find_all_normals_naive(pts2, wsize = wsize, flip_away=True)
-    exs = Exs
-    eys = Eys
+    exs = find_all_normals_naive(pts1r, wsize = wsize, flip_away=True)
+    eys = find_all_normals_naive(pts2, wsize = wsize, flip_away=True)
+    #exs = Exs
+    #eys = Eys
 
     #ipy.embed()
-    #ipy.embed()
 
-    n = 4 , #'I'
+    n = 8 , #'I'
 
     if 1 in n:
         f1 , corr1 = tps_rpm_curvature_prior1(pts1r, pts2,  n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, wsize = wsize, beta = beta, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1)
@@ -1093,7 +1081,7 @@ def main():
         #plot_grabs_two(f3, pts1r, angle)
 
     if 4 in n:
-        f4,corr4 = tps_rpm_EM(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, angle = angle, square_size = square_size1, circle_rad = circle_rad1, wsize = wsize)
+        f4,corr4 = tps_rpm_EM(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final = temp_final, bend_init = bend_init, bend_final = bend_final, plotting = plotting, wsize = wsize)
         #plot_house(f4, x0sr, x1sr, x2sr, x3sr, x4sr, number_points)
         #plot_box_circle(f4, square_size1, circle_rad1, angle, number_points = number_points)
         p_plt.plot_tps_registration(pts1r, pts2, f4)
@@ -1101,9 +1089,9 @@ def main():
     if 8 in n:
         f8, corr8, corr_edge8 = tps_n_rpm_final_hopefully(pts1r, pts2, n_iter = 20, EM_iter = EM_iter, temp_init = temp_init, temp_final=temp_final, normal_temp = normal_temp, bend_init = bend_init, bend_final = bend_final, normal_coef = normal_coef, plotting = plotting, jplotting = jplotting, beta = beta, wsize = wsize)
         #plot_house(f8, x0sr, x1sr, x2sr, x3sr, x4sr,  number_points) 
-        #plot_box_circle(f8, square_size1, circle_rad1, angle, number_points = number_points)
+        plot_box_circle(f8, square_size1, circle_rad1, angle, number_points = number_points)
         #plot_grabs_two(f6, pts1r, angle)
-        p_plt.plot_tps_registration(pts1r, pts2, f8)
+        #p_plt.plot_tps_registration(pts1r, pts2, f8)
 
 
 

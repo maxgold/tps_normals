@@ -122,11 +122,12 @@ def project_lower_dim (pcloud):
     return VT[0:dim-1,:].dot(p_centered.T).T
 
 
-def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
+def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False,origin=None):
     """
     Selects close points on pcloud within windowsize and then does PCA to find normals.
     Normal could potentially be flipped.
     """
+
     dim = pcloud.shape[1]
     cpoints = pcloud[nlg.norm(pcloud-pt, axis=1) <= wsize,:]
     if cpoints.shape[0] < dim: return np.zeros(dim  )
@@ -137,7 +138,11 @@ def find_normal_naive (pcloud, pt, wsize=0.02,flip_away=False):
 
     #Potentially flip the normal: if more than half of the other points are in the direction of the normal, flip
     if flip_away:
-        if sum((pcloud-pt).dot(nm)>0) > pcloud.shape[0]*1.0/2.0: nm = -nm
+        if origin is not None:
+            if (pt-origin).dot(nm) > (pt-origin).dot(-nm):
+                nm=-nm
+        else:
+            if sum((pcloud-pt).dot(nm)>0) > pcloud.shape[0]*1.0/2.0: nm = -nm
     
     return nm
 
@@ -274,10 +279,12 @@ def normal_corr_mult(corr, eys):
         a = np.where(corr_bools[i])
         if len(a[0]) > 0:
             corr_bools[i][(a[0][0]+1):] *= 0
-    corr_bools = np.c_[corr_bools, corr_bools, corr_bools].reshape((m*d, n))
-    
+    if d == 3:
+        corr_bools = np.c_[corr_bools, corr_bools, corr_bools].reshape((m*d, n))
+    else:
+        corr_bools = np.c_[corr_bools, corr_bools].reshape((m*d, n))
     normals = np.tile(eys_n.T, ((n, 1)))
-    #only care about first True value
+
     #ipy.embed()
     reference_normals = normals[corr_bools].reshape((m, d))
     eys_n_tiled = np.tile(eys_n, ((m,1))).reshape(m, n, d)
